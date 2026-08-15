@@ -28,14 +28,20 @@ changes route behavior, authentication, or the pipeline itself.
 >    wasn't, originally — see "Deployment requirements" below):
 >    - **Root Directory** is confirmed `./` (never actually verified
 >      during the original 404).
->    - `vercel.json` now sets `"buildCommand": null`. With Framework Preset
+>    - `vercel.json` sets `"buildCommand": ""`. With Framework Preset
 >      "Other", Vercel auto-detects `npm run build` (this project's local
 >      `tsc` build, which produces `dist/` for `node dist/index.js`) and
 >      runs it, then expects a static-site output directory (`public/` by
 >      default) to publish — which doesn't exist, because this project has
->      no frontend. `"buildCommand": null` tells Vercel not to run that
->      build step at all; `api/index.ts` is still compiled independently by
->      Vercel's own Node.js Function builder regardless of this setting.
+>      no frontend. An empty string explicitly disables that build step
+>      (confirmed against Vercel's own docs — the "Skip Build Step" recipe
+>      is "Framework Preset Other + Build Command overridden to empty";
+>      `buildCommand: null` was tried first and did **not** work — it was
+>      treated as "not specified," which fell back to auto-detecting
+>      `npm run build` from `package.json` again). `api/index.ts` is still
+>      compiled independently by Vercel's own Node.js Function builder
+>      regardless of this setting — this only stops the *unrelated*
+>      `tsc` build from running.
 
 ## Local development
 

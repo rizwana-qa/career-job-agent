@@ -53,8 +53,11 @@ async function main() {
     },
     {
       jobSource: createRemotiveJobSource(),
-      claudeClient: createClaudeClient()
+      claudeClient: createClaudeClient(),
       // notificationProvider deliberately omitted — sendWhatsApp is false, so it's never used.
+      // Safe operational logging only (runId/stage/counts/status/errorType) —
+      // same policy as the HTTP route's own logger.
+      log: (event) => console.log(JSON.stringify(event))
     }
   );
 

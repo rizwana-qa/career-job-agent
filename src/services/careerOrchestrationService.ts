@@ -219,23 +219,41 @@ export async function runCareerPipeline(input: CareerRunInput, deps: CareerRunDe
   // otherwise discoverJobs() would have thrown ClaudeNotConfiguredError and
   // this loop would never be reached (see the discovery try/catch above).
   for (const ranked of rankedJobs) {
+    // TEMPORARY: per-step diagnostic (2026-08-15) — the previous single
+    // "application_package" error log doesn't say WHICH of these four calls
+    // actually threw (they share the same InvalidClaudeResponseError
+    // message shape), which sent earlier debugging down the wrong path.
+    // Remove this whole try/catch-per-step structure once the root cause is
+    // confirmed, reverting to the simpler single try/catch below it.
+    let step = "tailoring";
     try {
       const tailored = await tailorResumeForJob(
         { job: ranked.job, careerProfile: resumeProfile, masterResume, jobPreferences },
         { claudeClient: deps.claudeClient as Anthropic }
       );
+      log({ runId, stage: "step_complete", step: "tailoring", jobTitle: ranked.job.jobTitle });
+
+      step = "evidence";
       const evidence = await verifyResumeEvidenceReport(
         { masterResume, careerProfile: resumeProfile, tailoredResume: tailored },
         { claudeClient: deps.claudeClient as Anthropic }
       );
+      log({ runId, stage: "step_complete", step: "evidence", jobTitle: ranked.job.jobTitle });
+
+      step = "qa";
       const qa = await reviewResume(
         { job: ranked.job, careerProfile: resumeProfile, masterResume, tailoredResume: tailored, evidenceGuardResult: evidence },
         { claudeClient: deps.claudeClient as Anthropic }
       );
+      log({ runId, stage: "step_complete", step: "qa", jobTitle: ranked.job.jobTitle });
+
+      step = "package";
       const pkg = await generateApplicationPackage(
         { job: ranked.job, jobMatch: ranked.match, careerProfile: resumeProfile, masterResume, tailoredResume: tailored, resumeQA: qa },
         { claudeClient: deps.claudeClient as Anthropic }
       );
+      log({ runId, stage: "step_complete", step: "package", jobTitle: ranked.job.jobTitle });
+
       packageResults.push(pkg);
       topJobSummaries.push(toTopJobSummary(ranked, pkg.status));
       log({ runId, stage: "application_package", jobTitle: ranked.job.jobTitle, status: pkg.status });
@@ -245,6 +263,7 @@ export async function runCareerPipeline(input: CareerRunInput, deps: CareerRunDe
         runId,
         stage: "application_package",
         status: "error",
+        failedStep: step,
         errorType: error instanceof Error ? error.name : "Unknown",
         // Safe: toSafeErrorMessage() reduces to "ErrorName: message" only —
         // never a raw payload, resume, or secret (same pattern already used

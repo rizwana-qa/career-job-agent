@@ -5,6 +5,21 @@ import { createApp } from "../../src/api/app.js";
 import type { JobSource, RawProviderJob } from "../../src/jobSources/jobSource.js";
 import { JobSourceUnavailableError } from "../../src/utils/errors.js";
 
+// Every test in this file that needs a Claude client injects its own mock —
+// none relies on the route's real createClaudeClient() fallback succeeding.
+// Mocked here so the "Claude is not configured" test stays correct
+// regardless of whether a real CLAUDE_API_KEY happens to be set locally
+// (e.g. in .env for tests/integration/careerRun.manual.ts).
+vi.mock("../../src/services/claudeClient.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../../src/services/claudeClient.js")>();
+  return {
+    ...actual,
+    createClaudeClient: () => {
+      throw new Error("CLAUDE_API_KEY is not configured");
+    }
+  };
+});
+
 const profile = {
   professionalTitle: "Principal Software Quality Engineer",
   coreSkills: "Playwright, API Testing, SQL"

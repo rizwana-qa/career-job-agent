@@ -33,9 +33,9 @@ only the packages that reached `READY_FOR_REVIEW`; nothing is ever
 auto-marked `APPLIED`. The n8n workflow definition itself, and writing
 packages to `applications/`, do not exist yet.
 
-Deployable to Vercel via its built-in, zero-config Express support (no
-`api/` directory, no `vercel.json`) with zero change to route behavior,
-auth, or the pipeline itself — see [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md).
+Deployable to Vercel as a serverless function (`api/index.ts`) with zero
+change to route behavior, auth, or the pipeline itself — see
+[`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md).
 
 See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for the planned system
 design and [`docs/WORKFLOW.md`](docs/WORKFLOW.md) for the intended pipeline.
@@ -83,7 +83,7 @@ left to you.
 | `npm run test:jobs:live` | Manual, real (read-only, no key needed) Remotive job search |
 | `npm run test:whatsapp` | Manual, real WhatsApp test notification — requires `WHATSAPP_*` credentials |
 | `npm run test:career:live` | Manual, real end-to-end orchestration run — requires `CLAUDE_API_KEY`; always dryRun/no WhatsApp |
-| `npm run verify:vercel` | Manual, runs `src/index.ts` (the Vercel entry point) as a real process and confirms `GET /health` → 200 |
+| `npm run verify:vercel` | Manual, imports `api/index.ts` (the Vercel entry point) and confirms `GET /health` → 200 |
 | `npm run lint`       | Lint the codebase                     |
 
 See `docs/TESTING.md` for details on all manual integration scripts.
@@ -91,11 +91,11 @@ See `docs/TESTING.md` for details on all manual integration scripts.
 ## Project layout
 
 ```
+api/
+  index.ts    Vercel serverless entry point (no app.listen — see docs/DEPLOYMENT.md)
 src/
-  index.ts    Entry point for BOTH local dev and Vercel (calls app.listen —
-              Vercel auto-detects this file via its zero-config Express
-              support; see docs/DEPLOYMENT.md)
-  api/        HTTP layer (Express routes)
+  index.ts    Local-dev entry point (calls app.listen)
+  api/        HTTP layer (Express routes), shared by both entry points above
   services/   External integrations (Claude, n8n, notifications)
   jobSources/ External job provider abstraction + implementations (Phase 6)
   notifications/ Notification provider abstraction + WhatsApp implementation (Phase 7)
@@ -110,12 +110,9 @@ profile/      Your career profile, master resume, job preferences
 resumes/      Generated tailored resumes (gitignored)
 applications/ Generated application packages (gitignored)
 docs/         Architecture, workflow, security, and deployment documentation
+vercel.json   Minimal Vercel routing config (rewrites all paths to api/index.ts;
+              Framework Preset must be "Other" — see docs/DEPLOYMENT.md)
 ```
-
-No `api/` directory and no `vercel.json` — Vercel deploys `src/index.ts`
-directly via its built-in Express support. See
-[`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md) for why an earlier version of
-this project had both, and why they were removed.
 
 ## Before you continue
 

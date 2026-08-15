@@ -36,11 +36,10 @@
   non-localhost interface, or put them behind a public URL/tunnel (e.g.
   ngrok) — both remain suitable for localhost development only.
   **Important consequence of Vercel deployment (see `docs/DEPLOYMENT.md`):**
-  Vercel's zero-config Express support deploys the *entire* app as one
-  Function and routes every path to it, so once deployed, `/jobs/analyze`
-  and `/jobs/discover` become reachable at the deployment's public HTTPS
-  URL with **no authentication**, alongside the now-authenticated
-  `/career/run`. This
+  `vercel.json`'s catch-all rewrite forwards *every* path to the same
+  Express app, so once deployed, `/jobs/analyze` and `/jobs/discover`
+  become reachable at the deployment's public HTTPS URL with **no
+  authentication**, alongside the now-authenticated `/career/run`. This
   wasn't true before this change and is a real, deliberately-flagged
   tradeoff of the smallest-possible Vercel setup — adding auth to those two
   routes was out of scope for "keep all existing functionality unchanged"

@@ -1,17 +1,35 @@
 # Deployment
 
-This project runs the exact same code locally and on Vercel — the same
-`src/index.ts` entry point, calling the same `createApp()` factory
-(`src/api/app.ts`). Every route, every piece of business logic, and every
+This project runs two ways from the exact same code: locally with
+`app.listen()`, and on Vercel as a serverless function with no listener at
+all. Both entry points call the same `createApp()` factory
+(`src/api/app.ts`) — every route, every piece of business logic, and every
 security control is identical in both places. Nothing described here
 changes route behavior, authentication, or the pipeline itself.
 
-> **Revision note:** an earlier version of this doc described a separate
-> `api/index.ts` serverless function plus a `vercel.json` catch-all
-> rewrite. That combination caused every route — including `/health` — to
-> return Vercel's own `404 NOT_FOUND` in production, because it mixed two
-> incompatible Vercel mechanisms (see Architecture below). Both files have
-> been removed; this doc now describes the corrected, zero-config setup.
+> **Revision history (read this if anything here seems inconsistent with
+> what you remember):** this project's Vercel setup has gone through two
+> approaches.
+> 1. Originally: `api/index.ts` + a `vercel.json` catch-all rewrite. This
+>    produced a blanket `404 NOT_FOUND` on every route in production.
+> 2. We then switched to Vercel's newer zero-config Express support (no
+>    `api/`, no `vercel.json` — just `src/index.ts` auto-detected). Locally
+>    this verified correctly, but in actual production deployment it hit a
+>    **build-time crash inside Vercel's own tooling** —
+>    `Error: Cannot read properties of undefined (reading 'fsPath')`,
+>    thrown immediately when `vercel build` starts, before any project
+>    file is processed. This looks like a bug in Vercel's Express
+>    auto-detector itself (a very recently released feature), not
+>    something fixable from this codebase.
+> 3. **Current state: back to `api/index.ts` + `vercel.json`** (approach
+>    1), because it's the older, far more battle-tested code path on
+>    Vercel. The one thing that's different this time: we've now confirmed
+>    the Vercel project's **Root Directory** setting is correctly `./`,
+>    which was never actually verified during the original 404 — it's
+>    possible that was a contributing factor the first time around, not a
+>    problem with this approach itself. If this combination still fails
+>    once Root Directory and Framework Preset (see below) are both
+>    correct, that's new information worth capturing here.
 
 ## Local development
 
@@ -24,67 +42,58 @@ npm run dev
 ```
 
 `npm run dev` runs `src/index.ts`, which calls `createApp()` and then
-`app.listen(env.port)` (default port 3000). Health check:
+`app.listen(env.port)` (default port 3000). This is the **only** place in
+the codebase that calls `app.listen()`. Health check:
 `GET http://localhost:3000/health`.
 
 ## Vercel deployment
 
 ### Architecture
 
-This project relies entirely on Vercel's built-in, current, zero-config
-**Express** framework support ([docs](https://vercel.com/docs/frameworks/backend/express))
-— no custom `api/` directory and no `vercel.json` are used or needed.
+Vercel does not run a long-lived server for this project — it builds one
+serverless function per request path in `/api` and invokes it per request.
+This project has exactly one such function:
 
-Vercel detects an Express app to deploy by looking for a file at one of a
-fixed set of conventional locations — `app.*` / `index.*` / `server.*`,
-at the project root or under `src/` — that either default-exports the
-Express app or calls `app.listen()`. **`src/index.ts` already satisfies
-this exactly** (it's at the recognized location and uses the `app.listen()`
-"port listener" pattern) — it required **zero changes** to become the
-Vercel entry point, because it already was a valid one.
+- **`api/index.ts`** — imports `createApp()` from `src/api/app.ts` and
+  exports the resulting Express app as the default export. Vercel's
+  Node.js runtime calls a default-exported `(req, res)` handler directly,
+  and an Express app already has that exact shape — no adapter code, no
+  extra dependency. It does **not** call `app.listen()`; Vercel owns the
+  HTTP server and process lifecycle.
+- **`vercel.json`** — a single catch-all rewrite:
+  ```json
+  { "rewrites": [{ "source": "/(.*)", "destination": "/api" }] }
+  ```
+  Without this, Vercel's file-system routing would only serve requests to
+  the literal path `/api` (since `api/index.ts` is the only function).
+  The rewrite forwards every path — `/health`, `/jobs/analyze`,
+  `/jobs/discover`, `/career/run` — to that one function, which then does
+  its own internal routing exactly as it does locally. The original
+  request path is preserved; nothing is prefixed with `/api` for callers.
 
-When it detects this, Vercel wraps the *entire* Express app as a single
-Vercel Function and routes every incoming path to it — `/health`,
-`/jobs/analyze`, `/jobs/discover`, `/career/run`, all of it — with the
-app's own internal Express routing (`src/api/app.ts`) deciding what
-happens from there, identical to how it behaves locally. `app.listen()`
-still runs, but Vercel manages the actual request lifecycle around it; you
-don't need to reason about that distinction, since it's Vercel's internal
-implementation, not something this codebase does anything special for.
+**Important — the Vercel project's Framework Preset must be set to
+"Other"**, not "Express". "Express" activates the newer zero-config
+detector described in the revision history above, which currently crashes
+at build time on this project. "Other" uses the plain `/api` Serverless
+Function builder instead, which is what actually runs `api/index.ts`.
+(Settings → General → Framework Preset.)
 
-**What was removed and why:** a previous revision of this project added a
-manually-authored `api/index.ts` (importing `createApp()` and exporting
-the Express app directly) plus a `vercel.json` catch-all rewrite
-(`"/(.*)" → "/api"`), based on the older, generic "put a function under
-`/api`" convention. That convention is for individual Web-Handler-style
-functions (`export function GET(request: Request)`), not a full
-self-routing Express app, and it doesn't collapse `api/index.ts` to the
-path `/api` the way the rewrite assumed. Layering it on top of an
-already-zero-config-compatible `src/index.ts` caused a routing conflict:
-Vercel's build succeeded (`READY`), but no path resolved to a working
-function, so every request fell through to Vercel's platform-level `404`.
-The fix was to delete both files, not to correct the rewrite — the
-zero-config path was already correct and needed no configuration at all.
-
-No build step is required specifically for Vercel: its Node.js builder
-compiles `src/index.ts` (and everything it imports) directly from
-TypeScript source at deploy time. The project's own `npm run build`
-(`tsc -p tsconfig.json`) is unrelated to this — it still only produces the
-`node dist/index.js` build artifact and continues to pass unchanged.
+No build step is required specifically for the API: Vercel's Node.js
+builder compiles `api/index.ts` (and everything it imports from `src/`)
+directly from TypeScript source at deploy time. The project's own
+`npm run build` (`tsc -p tsconfig.json`, scoped to `src/**/*.ts` only) is
+unaffected by this — it still only compiles the local-dev/production
+(`node dist/index.js`) build and continues to pass unchanged.
 
 ### Deployment requirements
 
-- A Vercel project pointed at this repository (or this subdirectory, if
-  deployed from a monorepo) — **the Vercel project's Root Directory
-  setting must point at `career-job-agent`** if the connected Git
-  repository's actual root is one level above it (verify in Vercel
-  Project Settings → General → Root Directory). If Root Directory is
-  wrong, Vercel won't find `package.json`/`src/index.ts` at all, which
-  produces the same blanket-404 symptom as the routing bug this doc
-  describes — check this first if `/health` still 404s after the fix
-  above is deployed.
-- No project-level Build Command override is required — Vercel's Express
-  framework detection is automatic (zero-config).
+- A Vercel project pointed at this repository — **Root Directory** should
+  be `./` (blank/default) since this repository's root *is* the project
+  root (verify in Vercel Project Settings → General → Root Directory). If
+  Root Directory is wrong, Vercel won't find `package.json`/`api/` at all,
+  which produces the same blanket-404 symptom described above.
+- **Framework Preset must be "Other"** (see Architecture above) — not
+  "Express", which crashes the build on this project as of this writing.
 - Node.js 18+ (already declared in `package.json` → `engines`).
 - All required environment variables set in the Vercel project's
   **Settings → Environment Variables** (see below) — never committed to
@@ -106,23 +115,21 @@ locally — nothing Vercel-specific was added to how they're read.
 | `WHATSAPP_RECIPIENT_NUMBER` | WhatsApp notifications | E.164 format, e.g. `+923001234567`. |
 | `REMOTIVE_MIN_FETCH_INTERVAL_HOURS` | Job discovery throttle | Optional, defaults to `6` if unset. |
 
-`PORT` doesn't need to be set on Vercel — `src/index.ts` still calls
-`app.listen(env.port)` there (Vercel's Express support explicitly expects
-that pattern), but Vercel manages the actual request routing around it
-regardless of which port value is used, so the default (3000) is fine to
-leave as-is.
+`PORT` is **not needed on Vercel** — it only matters to `src/index.ts`'s
+local `app.listen()` call, which never runs in the serverless entry point
+(`api/index.ts`).
 
 Never hardcode `CLAUDE_API_KEY` or `CAREER_AGENT_API_KEY` anywhere in
-source — both are read exclusively from `process.env` at request time
-(`CLAUDE_API_KEY` via `createClaudeClient()`; `CAREER_AGENT_API_KEY` via
+source, in `vercel.json`, or in `api/index.ts` — both are read exclusively
+from `process.env` at request time (`CLAUDE_API_KEY` via
+`createClaudeClient()`; `CAREER_AGENT_API_KEY` via
 `src/api/routes/careerRun.ts`).
 
 ### API endpoint
 
 Once deployed, the app is reachable at your Vercel project's domain with
-the **same paths as local dev** — Vercel routes every path directly into
-the single Express Function, so nothing is prefixed with `/api` and no
-rewrite is needed to achieve that:
+the **same paths as local dev** — the rewrite in `vercel.json` strips the
+`/api` implementation detail away:
 
 ```
 https://<your-vercel-domain>/health
@@ -131,9 +138,9 @@ https://<your-vercel-domain>/jobs/discover
 https://<your-vercel-domain>/career/run
 ```
 
-> **Read this before deploying.** Because Vercel deploys the *entire*
-> Express app as one Function, `/jobs/analyze` and `/jobs/discover` —
-> which have **no authentication**, by design, as localhost-only
+> **Read this before deploying.** `vercel.json`'s catch-all rewrite sends
+> every path to the same function, so `/jobs/analyze` and `/jobs/discover`
+> — which have **no authentication**, by design, as localhost-only
 > endpoints — become publicly reachable too, not just `/career/run`. This
 > is unchanged code, just newly-public exposure once deployed. See
 > `docs/SECURITY.md` → API exposure for the full explanation and
@@ -164,11 +171,12 @@ https://<your-vercel-domain>/career/run
 npm run verify:vercel
 ```
 
-`tests/integration/vercelEntry.manual.ts` runs `src/index.ts` — the exact
-file Vercel deploys — as a real child process (not an in-repo mock),
-confirms `GET /health` returns `200`, confirms `POST /career/run` still
-requires authentication, then shuts it down. Not run by `npm test`
-(excluded by Vitest's `tests/**/*.test.ts` glob), same as the other
+`tests/integration/vercelEntry.manual.ts` imports `api/index.ts` — the
+exact file Vercel deploys — and drives it with Supertest, confirming
+`GET /health` returns `200` and `POST /career/run` still requires
+authentication. No child process or open port needed, since `api/index.ts`
+never calls `app.listen()`. Not run by `npm test` (excluded by Vitest's
+`tests/**/*.test.ts` glob), same as the other
 `tests/integration/*.manual.ts` scripts.
 
 ### How n8n should call the endpoint

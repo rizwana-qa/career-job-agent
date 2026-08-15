@@ -241,7 +241,16 @@ export async function runCareerPipeline(input: CareerRunInput, deps: CareerRunDe
       log({ runId, stage: "application_package", jobTitle: ranked.job.jobTitle, status: pkg.status });
     } catch (error) {
       hadPerJobFailures = true;
-      log({ runId, stage: "application_package", status: "error", errorType: error instanceof Error ? error.name : "Unknown" });
+      log({
+        runId,
+        stage: "application_package",
+        status: "error",
+        errorType: error instanceof Error ? error.name : "Unknown",
+        // Safe: toSafeErrorMessage() reduces to "ErrorName: message" only —
+        // never a raw payload, resume, or secret (same pattern already used
+        // for claudeMatchFailures above).
+        errorDetail: toSafeErrorMessage(error)
+      });
       // A single job's failure never aborts the run — continue with the rest.
     }
   }

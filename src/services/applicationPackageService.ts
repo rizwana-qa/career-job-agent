@@ -107,6 +107,21 @@ async function generateApplicationMessage(
         { timeout: CLAUDE_REQUEST_TIMEOUT_MS }
       )) as unknown as ClaudeMessageLike;
 
+      // TEMPORARY diagnostic — safe shape info only (block types, stop
+      // reason, usage), never actual content. Remove once the production
+      // "no text content block, every attempt" issue (2026-08-15,
+      // application_package stage specifically) is root-caused.
+      console.log(
+        JSON.stringify({
+          source: "career-agent-debug",
+          stage: "generateApplicationMessage",
+          attempt,
+          contentBlockTypes: message.content?.map((b) => b.type),
+          stopReason: (message as unknown as { stop_reason?: unknown }).stop_reason,
+          usage: (message as unknown as { usage?: unknown }).usage
+        })
+      );
+
       const text = extractText(message);
       const parsed = parseJson(text);
       const result = ApplicationMessageResponseSchema.safeParse(parsed);

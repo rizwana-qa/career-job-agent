@@ -30,7 +30,24 @@ export const JobMatchSchema = z.object({
   transferableSkills: z.array(EvidenceStatementSchema),
   gaps: z.array(EvidenceStatementSchema),
   risks: z.array(EvidenceStatementSchema),
-  reason: z.string().trim().min(1)
+  reason: z.string().trim().min(1),
+  /**
+   * Career Relevance Gate (Phase 8.3) — optional so every existing caller
+   * and test fixture that predates this field (POST /career/run,
+   * POST /jobs/analyze, and their tests) keeps validating and behaving
+   * exactly as before. Only POST /career/discover-match's own gate logic
+   * reads this field; matchScore's meaning and every other field are
+   * unchanged. Distinct from matchScore: matchScore is "how well does this
+   * job fit the candidate's own skills/experience", careerRelevanceScore is
+   * "how strongly does this role belong to the candidate's target career
+   * family at all" (e.g. a Tier III Service Desk Engineer role could in
+   * principle score reasonably on matchScore-adjacent factors while still
+   * being a fundamentally different career family — this field is what lets
+   * the gate reject that independently of matchScore).
+   */
+  careerRelevanceScore: score().optional(),
+  /** Short, safe, human-readable rationale for why a job was (or would be) shortlisted — never full job description or profile content. */
+  whySelected: z.string().trim().min(1).optional()
 });
 
 export type JobMatch = z.infer<typeof JobMatchSchema>;

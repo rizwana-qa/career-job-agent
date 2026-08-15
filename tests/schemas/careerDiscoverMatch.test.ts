@@ -41,13 +41,19 @@ function validTopJob() {
     jobTitle: "AI Quality Engineer",
     company: "Vantage AI",
     location: "Worldwide",
+    country: "Worldwide",
+    remoteStatus: "REMOTE",
+    employmentType: "FULL_TIME",
+    postedAt: "2026-08-10",
     source: "remotive",
     sourceUrl: "https://remotive.com/remote-jobs/qa/1",
+    careerRelevanceScore: 90,
     matchScore: 82,
     interviewPotential: 70,
     careerGrowth: 60,
     futureAIValue: 75,
     recommendation: "APPLY",
+    whySelected: "Strong alignment with QA automation and quality engineering.",
     jobData: { job: validJob(), match: validMatch() }
   };
 }
@@ -84,6 +90,8 @@ describe("DiscoverMatchResultSchema", () => {
       jobsAfterFiltering: 8,
       jobsMatched: 5,
       matchingFailures: 0,
+      relevanceFiltered: 2,
+      sources: [{ name: "remotive", status: "OK", jobsFound: 10 }],
       topJobs: [validTopJob()]
     });
     expect(result.success).toBe(true);
@@ -96,6 +104,8 @@ describe("DiscoverMatchResultSchema", () => {
       jobsAfterFiltering: 0,
       jobsMatched: 0,
       matchingFailures: 0,
+      relevanceFiltered: 0,
+      sources: [],
       topJobs: []
     });
     expect(result.success).toBe(true);
@@ -110,6 +120,24 @@ describe("DiscoverMatchResultSchema", () => {
       jobsAfterFiltering: 1,
       jobsMatched: 1,
       matchingFailures: 0,
+      relevanceFiltered: 0,
+      sources: [],
+      topJobs: [topJob]
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it("rejects a topJob missing careerRelevanceScore", () => {
+    const topJob = validTopJob() as Record<string, unknown>;
+    delete topJob.careerRelevanceScore;
+    const result = DiscoverMatchResultSchema.safeParse({
+      status: "COMPLETED",
+      jobsDiscovered: 1,
+      jobsAfterFiltering: 1,
+      jobsMatched: 1,
+      matchingFailures: 0,
+      relevanceFiltered: 0,
+      sources: [],
       topJobs: [topJob]
     });
     expect(result.success).toBe(false);
@@ -122,6 +150,22 @@ describe("DiscoverMatchResultSchema", () => {
       jobsAfterFiltering: 1,
       jobsMatched: 0,
       matchingFailures: -1,
+      relevanceFiltered: 0,
+      sources: [],
+      topJobs: []
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it("rejects a negative relevanceFiltered count", () => {
+    const result = DiscoverMatchResultSchema.safeParse({
+      status: "FAILED",
+      jobsDiscovered: 1,
+      jobsAfterFiltering: 1,
+      jobsMatched: 0,
+      matchingFailures: 0,
+      relevanceFiltered: -1,
+      sources: [],
       topJobs: []
     });
     expect(result.success).toBe(false);
@@ -134,8 +178,41 @@ describe("DiscoverMatchResultSchema", () => {
       jobsAfterFiltering: 0,
       jobsMatched: 0,
       matchingFailures: 0,
+      relevanceFiltered: 0,
+      sources: [],
       topJobs: []
     });
     expect(result.success).toBe(false);
+  });
+
+  it("rejects a source diagnostic with an unknown status value", () => {
+    const result = DiscoverMatchResultSchema.safeParse({
+      status: "FAILED",
+      jobsDiscovered: 0,
+      jobsAfterFiltering: 0,
+      jobsMatched: 0,
+      matchingFailures: 0,
+      relevanceFiltered: 0,
+      sources: [{ name: "indeed", status: "DISABLED" }],
+      topJobs: []
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it("accepts multiple source diagnostics, including a FAILED one", () => {
+    const result = DiscoverMatchResultSchema.safeParse({
+      status: "PARTIAL",
+      jobsDiscovered: 10,
+      jobsAfterFiltering: 5,
+      jobsMatched: 5,
+      matchingFailures: 0,
+      relevanceFiltered: 0,
+      sources: [
+        { name: "remotive", status: "OK", jobsFound: 10 },
+        { name: "indeed", status: "FAILED" }
+      ],
+      topJobs: []
+    });
+    expect(result.success).toBe(true);
   });
 });

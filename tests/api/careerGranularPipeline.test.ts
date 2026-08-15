@@ -70,6 +70,9 @@ function matchJson(overrides: Record<string, unknown> = {}): string {
     gaps: [],
     risks: [],
     reason: "test fixture reason",
+    // Career Relevance Gate (Phase 8.3) default — passes the >= 70 gate.
+    careerRelevanceScore: 85,
+    whySelected: "Strong alignment with the target career family.",
     ...overrides
   });
 }
@@ -197,7 +200,10 @@ describe("Granular pipeline regression (Phase 8.2 §10) — 10 discovered, 8 fil
     const discoverBody: DiscoverMatchResult = discoverResponse.body;
     expect(discoverBody.jobsDiscovered).toBe(10);
     expect(discoverBody.jobsAfterFiltering).toBe(8);
-    expect(discoverBody.jobsMatched).toBe(5);
+    // jobsMatched reflects every job Claude successfully evaluated (capped
+    // only by maxJobs=10, all 8 eligible jobs matched) — the Career
+    // Relevance Gate is applied afterward, separately, to produce topJobs.
+    expect(discoverBody.jobsMatched).toBe(8);
     expect(discoverBody.matchingFailures).toBe(0);
     expect(discoverBody.topJobs).toHaveLength(5);
     // Sorted highest match first.

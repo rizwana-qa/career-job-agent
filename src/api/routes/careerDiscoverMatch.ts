@@ -8,18 +8,33 @@ import {
   type RelevantProfileFields
 } from "../../services/profileService.js";
 import { discoverJobs } from "../../services/jobDiscoveryService.js";
-import { createRemotiveJobSource } from "../../jobSources/remotiveJobSource.js";
+import { getEnabledJobSources } from "../../jobSources/jobSourceRegistry.js";
 import type { JobSource } from "../../jobSources/jobSource.js";
 import type { RankedJob, RankingOptions } from "../../ranking/jobRanking.js";
-import { DiscoverMatchRequestSchema, type DiscoverMatchResult, type DiscoverMatchTopJob } from "../../schemas/careerDiscoverMatch.js";
+import {
+  DiscoverMatchRequestSchema,
+  type DiscoverMatchResult,
+  type DiscoverMatchTopJob,
+  type SourceDiagnostic
+} from "../../schemas/careerDiscoverMatch.js";
 import type { CareerRunStatus } from "../../schemas/careerRun.js";
 import { InMemoryIdempotencyStore, type IdempotencyStore } from "../../services/careerOrchestrationService.js";
+import {
+  isHardNegativeRole,
+  CAREER_RELEVANCE_SCORE_THRESHOLD,
+  MATCH_SCORE_THRESHOLD,
+  SHORTLIST_ELIGIBLE_RECOMMENDATIONS
+} from "../../services/careerRelevanceFilter.js";
+import { isLocationEligible } from "../../services/locationEligibilityFilter.js";
 import { ClaudeNotConfiguredError, InvalidDiscoveryInputError, JobSourceError, toSafeErrorMessage } from "../../utils/errors.js";
 import { formatZodIssues } from "../../utils/zod.js";
 import { authenticateCareerAgentRequest } from "./careerAuth.js";
 
 export interface CareerDiscoverMatchRouterDependencies {
+  /** Legacy single-source override — still supported for backward compatibility with earlier tests/callers; wrapped into a one-entry `jobSources` array. */
   jobSource?: JobSource;
+  /** Phase 8.4 multi-source override — when supplied, takes precedence over `jobSource` and the env-driven registry. */
+  jobSources?: JobSource[];
   claudeClient?: Anthropic;
   profile?: RelevantProfileFields;
   jobDiscoveryPreferences?: JobDiscoveryPreferences;
@@ -29,12 +44,15 @@ export interface CareerDiscoverMatchRouterDependencies {
   apiKey?: string;
 }
 
-let defaultJobSource: JobSource | undefined;
-function getDefaultJobSource(): JobSource {
-  if (!defaultJobSource) {
-    defaultJobSource = createRemotiveJobSource();
+/** Resolves which sources this request should query (Phase 8.4 §3/§11): explicit override > legacy single-source override > env-configured registry. */
+function resolveJobSources(deps: CareerDiscoverMatchRouterDependencies): JobSource[] {
+  if (deps.jobSources && deps.jobSources.length > 0) {
+    return deps.jobSources;
   }
-  return defaultJobSource;
+  if (deps.jobSource) {
+    return [deps.jobSource];
+  }
+  return getEnabledJobSources();
 }
 
 let defaultIdempotencyStore: IdempotencyStore<DiscoverMatchResult> | undefined;
@@ -54,18 +72,48 @@ function determineDiscoverMatchStatus(
   jobsDiscovered: number,
   jobsAfterFiltering: number,
   jobsMatched: number,
-  matchingFailureCount: number
+  matchingFailureCount: number,
+  /** Phase 8.4 §12: every configured/attempted source failed outright — a hard failure even when jobsDiscovered legitimately ends up 0 as a result. Defaults to false so the pre-8.4 signature/behavior is preserved for any caller that doesn't pass it. */
+  allSourcesFailed = false,
+  /** Phase 8.4 §12: at least one (but not all) configured sources failed — "some sources fail but others succeed" degrades the run to PARTIAL even when matching itself had zero failures, since the discovered set is known-incomplete. Defaults to false. */
+  anySourceFailed = false
 ): CareerRunStatus {
-  if (jobsDiscovered === 0) {
+  if (allSourcesFailed) {
+    return "FAILED";
+  }
+  if (jobsDiscovered === 0 && !anySourceFailed) {
     return "COMPLETED"; // legitimately nothing to process — not a failure
   }
   if (jobsAfterFiltering > 0 && jobsMatched === 0 && matchingFailureCount > 0) {
     return "FAILED";
   }
-  if (matchingFailureCount > 0) {
+  if (matchingFailureCount > 0 || anySourceFailed) {
     return "PARTIAL";
   }
   return "COMPLETED";
+}
+
+/**
+ * Career Relevance Gate (Phase 8.3) — the deterministic decision of whether
+ * an already-Claude-matched job may enter the shortlist. The hard negative
+ * filter (careerRelevanceFilter.ts's isHardNegativeRole) already kept
+ * obvious mismatches from ever reaching Claude; this is the second,
+ * narrower gate applied to jobs Claude *did* evaluate. All three conditions
+ * are required — this is plain deterministic thresholding (CLAUDE.md rule
+ * 7), not something delegated to Claude.
+ */
+function passesCareerRelevanceGate(ranked: RankedJob): boolean {
+  const careerRelevanceScore = ranked.match.careerRelevanceScore;
+  if (careerRelevanceScore === undefined || careerRelevanceScore < CAREER_RELEVANCE_SCORE_THRESHOLD) {
+    return false;
+  }
+  if (ranked.match.matchScore < MATCH_SCORE_THRESHOLD) {
+    return false;
+  }
+  if (!SHORTLIST_ELIGIBLE_RECOMMENDATIONS.has(ranked.match.recommendation)) {
+    return false;
+  }
+  return true;
 }
 
 function toDiscoverMatchTopJob(ranked: RankedJob): DiscoverMatchTopJob {
@@ -74,13 +122,24 @@ function toDiscoverMatchTopJob(ranked: RankedJob): DiscoverMatchTopJob {
     jobTitle: ranked.job.jobTitle,
     company: ranked.job.company,
     location: ranked.job.location,
+    country: ranked.job.country,
+    remoteStatus: ranked.job.remoteStatus,
+    employmentType: ranked.job.employmentType,
+    ...(ranked.job.salary !== undefined ? { salary: ranked.job.salary } : {}),
+    ...(ranked.job.currency !== undefined ? { currency: ranked.job.currency } : {}),
+    postedAt: ranked.job.datePosted,
     source: ranked.job.source,
     sourceUrl: ranked.job.sourceUrl,
+    // Safe fallback for the type system only — every job reaching this
+    // mapper has already passed passesCareerRelevanceGate(), which requires
+    // careerRelevanceScore to be a defined number >= threshold.
+    careerRelevanceScore: ranked.match.careerRelevanceScore ?? 0,
     matchScore: ranked.match.matchScore,
     interviewPotential: ranked.match.interviewPotential,
     careerGrowth: ranked.match.careerGrowth,
     futureAIValue: ranked.match.futureAIValue,
     recommendation: ranked.match.recommendation,
+    whySelected: ranked.match.whySelected ?? ranked.match.reason,
     jobData: { job: ranked.job, match: ranked.match }
   };
 }
@@ -139,23 +198,70 @@ export function createCareerDiscoverMatchRouter(deps: CareerDiscoverMatchRouterD
     }
 
     try {
+      const jobSources = resolveJobSources(deps);
       const discovery = await discoverJobs(
         { criteria: {} },
         {
-          jobSource: deps.jobSource ?? getDefaultJobSource(),
+          // Phase 8.4: always the plural multi-source path (even a single
+          // configured source goes through it), so per-source error
+          // isolation and cross-source dedup are always in effect for this
+          // endpoint. /career/run and /jobs/discover are untouched — they
+          // still pass the singular `jobSource` and never see this path.
+          jobSources,
           claudeClient,
           profile,
           jobDiscoveryPreferences,
           rankingOptions: deps.rankingOptions,
-          topCount: topJobs,
+          // Deliberately NOT topJobs here — that's the caller's requested
+          // *shortlist* size, applied below after the Career Relevance
+          // Gate. Requesting topCount: maxJobs instead gets back every job
+          // Claude successfully matched (bounded only by how many were
+          // ever sent to Claude), so the gate has the full ranked list to
+          // filter before truncating to what the caller actually asked for.
+          topCount: maxJobs,
           maxJobs,
-          includeRankedJobs: true
+          includeRankedJobs: true,
+          // Pre-Claude deterministic guards, composed (Phase 8.3 + 8.4):
+          // hard negative title filter (careerRelevanceFilter.ts — UNCHANGED)
+          // AND location eligibility (locationEligibilityFilter.ts — new in
+          // 8.4). Note the negation on isHardNegativeRole: analyzeJobs()'s
+          // preMatchFilter convention is "true = keep this job", while
+          // isHardNegativeRole's convention is "true = this IS a hard
+          // negative (reject it)" — inverted here at the call site rather
+          // than changing either function's own, independently-sensible
+          // naming.
+          preMatchFilter: (job) => !isHardNegativeRole(job) && isLocationEligible(job)
         }
       );
 
       const matchingFailures = discovery.claudeFailures?.length ?? 0;
+      // jobsMatched intentionally keeps its pre-Phase-8.3 meaning: jobs
+      // Claude successfully evaluated, any recommendation, before the
+      // relevance gate. This preserves determineDiscoverMatchStatus()'s
+      // existing FAILED/PARTIAL semantics unchanged. topJobs.length below
+      // is the actual shortlist count, after gating.
       const jobsMatched = discovery.jobs.length;
-      const status = determineDiscoverMatchStatus(discovery.jobsFound, discovery.jobsAfterFiltering, jobsMatched, matchingFailures);
+      const sources: SourceDiagnostic[] = discovery.sourceDiagnostics ?? [];
+      // Phase 8.4 §12: every attempted source failing outright is a hard
+      // failure, even if that legitimately leaves jobsDiscovered at 0 (which
+      // determineDiscoverMatchStatus's plain jobsDiscovered===0 branch would
+      // otherwise read as "nothing to process" rather than "everything failed").
+      const allSourcesFailed = sources.length > 0 && sources.every((s) => s.status === "FAILED");
+      const anySourceFailed = sources.some((s) => s.status === "FAILED");
+      const status = determineDiscoverMatchStatus(
+        discovery.jobsFound,
+        discovery.jobsAfterFiltering,
+        jobsMatched,
+        matchingFailures,
+        allSourcesFailed,
+        anySourceFailed
+      );
+
+      // Career Relevance Gate, part 2: careerRelevanceScore >= 70 AND
+      // matchScore >= 70 AND recommendation in {APPLY, CONSIDER}. A REJECT
+      // recommendation can never reach topJobs, regardless of scores.
+      const gatedJobs = (discovery.rankedJobs ?? []).filter(passesCareerRelevanceGate);
+      const shortlisted = gatedJobs.slice(0, topJobs);
 
       const result: DiscoverMatchResult = {
         status,
@@ -163,7 +269,9 @@ export function createCareerDiscoverMatchRouter(deps: CareerDiscoverMatchRouterD
         jobsAfterFiltering: discovery.jobsAfterFiltering,
         jobsMatched,
         matchingFailures,
-        topJobs: (discovery.rankedJobs ?? []).map(toDiscoverMatchTopJob)
+        relevanceFiltered: discovery.relevanceFilteredCount ?? 0,
+        sources,
+        topJobs: shortlisted.map(toDiscoverMatchTopJob)
       };
 
       if (idempotencyKey) {

@@ -1,5 +1,5 @@
 import type Anthropic from "@anthropic-ai/sdk";
-import type { JobValidationFailure } from "../schemas/job.js";
+import type { Job, JobValidationFailure } from "../schemas/job.js";
 import type { EvidenceStatement } from "../schemas/jobMatch.js";
 import { MATCH_SCORE_LABEL } from "../schemas/jobMatch.js";
 import { loadJobsFromInput } from "./jobSourceService.js";
@@ -101,6 +101,16 @@ export interface AnalyzeJobsDependencies {
    * (including POST /jobs/analyze) are unaffected and never see this field.
    */
   includeRankedJobs?: boolean;
+  /**
+   * Optional deterministic pre-Claude guard (Phase 8.3 Career Relevance
+   * Gate) — when provided, a job for which this returns false is skipped
+   * entirely: no Claude call is made for it, and it's tracked separately in
+   * `relevanceFilteredCount`, not counted as a `claudeFailures` entry (it
+   * never failed anything — it was never sent). Undefined by default, so
+   * every existing caller (POST /career/run, POST /jobs/analyze) is
+   * completely unaffected — only POST /career/discover-match passes one.
+   */
+  preMatchFilter?: (job: Job) => boolean;
 }
 
 export interface AnalyzeJobsResult {
@@ -112,6 +122,8 @@ export interface AnalyzeJobsResult {
   claudeFailures?: ClaudeFailure[];
   /** Only present when `includeRankedJobs` was set — same jobs, same order, as `topJobs`. */
   rankedJobs?: RankedJob[];
+  /** Only present when `preMatchFilter` was supplied — how many eligible jobs it excluded before any Claude call. */
+  relevanceFilteredCount?: number;
 }
 
 /**
@@ -133,7 +145,21 @@ export async function analyzeJobs(rawJobs: unknown[], deps: AnalyzeJobsDependenc
 
   // maxJobs caps only what proceeds to Claude — jobsEligible above always
   // reports the true, uncapped deterministic-filter count.
-  const jobsToMatch = deps.maxJobs !== undefined ? eligible.slice(0, deps.maxJobs) : eligible;
+  const cappedForMatching = deps.maxJobs !== undefined ? eligible.slice(0, deps.maxJobs) : eligible;
+
+  // preMatchFilter (Phase 8.3): applied before the Claude-client check below
+  // so a run consisting entirely of hard-filtered jobs never spuriously
+  // requires a configured Claude client for jobs it was never going to send.
+  let relevanceFilteredCount = 0;
+  const jobsToMatch = deps.preMatchFilter
+    ? cappedForMatching.filter((job) => {
+        const passes = deps.preMatchFilter!(job);
+        if (!passes) {
+          relevanceFilteredCount += 1;
+        }
+        return passes;
+      })
+    : cappedForMatching;
 
   if (jobsToMatch.length > 0 && !deps.claudeClient) {
     throw new ClaudeNotConfiguredError();
@@ -162,6 +188,9 @@ export async function analyzeJobs(rawJobs: unknown[], deps: AnalyzeJobsDependenc
   const result: AnalyzeJobsResult = { jobsReceived, jobsEligible, jobsAnalyzed, topJobs };
   if (invalidJobs.length > 0) {
     result.invalidJobs = invalidJobs;
+  }
+  if (deps.preMatchFilter) {
+    result.relevanceFilteredCount = relevanceFilteredCount;
   }
   if (claudeFailures.length > 0) {
     result.claudeFailures = claudeFailures;

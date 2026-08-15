@@ -18,6 +18,33 @@ interface EnvConfig {
   whatsappRecipientNumber: string | undefined;
   /** Shared secret for POST /career/run (Authorization: Bearer <key>). Never hardcoded, never logged. */
   careerAgentApiKey: string | undefined;
+
+  // --- Multi-source job discovery (Phase 8.4) ---
+  // Enablement flags only gate POST /career/discover-match's source registry
+  // (src/jobSources/jobSourceRegistry.ts) — /career/run and /jobs/discover
+  // are untouched and always use their own single Remotive source directly.
+  /** Defaults to enabled — Remotive requires no credential. */
+  jobSourceRemotiveEnabled: boolean;
+  /** Defaults to disabled — see docs/JOB_SOURCES.md; no documented public API exists yet. */
+  jobSourceIndeedEnabled: boolean;
+  /** Defaults to disabled — see docs/JOB_SOURCES.md; no documented public API exists yet. */
+  jobSourceNaukrigulfEnabled: boolean;
+  /** Defaults to disabled — see docs/JOB_SOURCES.md; no documented public API exists yet. */
+  jobSourceGulfTalentEnabled: boolean;
+  /** Placeholder credential — unused until a documented Indeed access method exists. Never hardcoded. */
+  indeedApiKey: string | undefined;
+  /** Placeholder credential — unused until a documented Naukrigulf access method exists. Never hardcoded. */
+  naukrigulfApiKey: string | undefined;
+  /** Placeholder credential — unused until a documented GulfTalent access method exists. Never hardcoded. */
+  gulfTalentApiKey: string | undefined;
+}
+
+/** Parses an env var as a boolean flag: "true"/"1" (case-insensitive) => true, anything else (including unset) => the default. */
+function parseBooleanFlag(raw: string | undefined, defaultValue: boolean): boolean {
+  if (raw === undefined) {
+    return defaultValue;
+  }
+  return raw.trim().toLowerCase() === "true" || raw.trim() === "1";
 }
 
 export const env: EnvConfig = {
@@ -31,5 +58,12 @@ export const env: EnvConfig = {
   whatsappApiToken: process.env.WHATSAPP_API_TOKEN,
   whatsappPhoneNumberId: process.env.WHATSAPP_PHONE_NUMBER_ID,
   whatsappRecipientNumber: process.env.WHATSAPP_RECIPIENT_NUMBER,
-  careerAgentApiKey: process.env.CAREER_AGENT_API_KEY
+  careerAgentApiKey: process.env.CAREER_AGENT_API_KEY,
+  jobSourceRemotiveEnabled: parseBooleanFlag(process.env.JOB_SOURCE_REMOTIVE_ENABLED, true),
+  jobSourceIndeedEnabled: parseBooleanFlag(process.env.JOB_SOURCE_INDEED_ENABLED, false),
+  jobSourceNaukrigulfEnabled: parseBooleanFlag(process.env.JOB_SOURCE_NAUKRIGULF_ENABLED, false),
+  jobSourceGulfTalentEnabled: parseBooleanFlag(process.env.JOB_SOURCE_GULFTALENT_ENABLED, false),
+  indeedApiKey: process.env.INDEED_API_KEY,
+  naukrigulfApiKey: process.env.NAUKRIGULF_API_KEY,
+  gulfTalentApiKey: process.env.GULFTALENT_API_KEY
 };

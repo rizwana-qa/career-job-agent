@@ -1,7 +1,15 @@
 import { z } from "zod";
-import { JobSchema } from "./job.js";
+import { JobSchema, RemoteStatusSchema, EmploymentTypeSchema } from "./job.js";
 import { JobMatchSchema } from "./jobMatch.js";
 import { CareerRunStatusSchema } from "./careerRun.js";
+
+/** Per-source discovery diagnostic (Phase 8.4 §12) — safe, credential-free status only. */
+export const SourceDiagnosticSchema = z.object({
+  name: z.string(),
+  status: z.enum(["OK", "FAILED"]),
+  jobsFound: z.number().int().min(0).optional()
+});
+export type SourceDiagnostic = z.infer<typeof SourceDiagnosticSchema>;
 
 /**
  * POST /career/discover-match request — Phase 8.2. Same validation limits
@@ -30,13 +38,25 @@ export const DiscoverMatchTopJobSchema = z.object({
   jobTitle: z.string(),
   company: z.string(),
   location: z.string(),
+  /** Phase 8.4 additions — always derivable from the underlying Job, additive/backward-compatible (jobTitle is kept, not renamed to "title", so existing n8n integrations reading jobTitle are unaffected). */
+  country: z.string(),
+  remoteStatus: RemoteStatusSchema,
+  employmentType: EmploymentTypeSchema,
+  salary: z.number().optional(),
+  currency: z.string().optional(),
+  /** Mirrors Job.datePosted under the Phase 8.4 spec's requested field name. */
+  postedAt: z.string(),
   source: z.string(),
   sourceUrl: z.string(),
+  /** Career Relevance Gate (Phase 8.3) — how strongly this role belongs to the target career family. Every job in topJobs has already passed the >= 70 gate; see careerRelevanceFilter.ts. */
+  careerRelevanceScore: z.number().int().min(0).max(100),
   matchScore: z.number().int().min(0).max(100),
   interviewPotential: z.number().int().min(0).max(100),
   careerGrowth: z.number().int().min(0).max(100),
   futureAIValue: z.number().int().min(0).max(100),
   recommendation: z.string(),
+  /** Short, safe rationale — never full job description or profile content. */
+  whySelected: z.string(),
   jobData: z.object({
     job: JobSchema,
     match: JobMatchSchema
@@ -48,8 +68,14 @@ export const DiscoverMatchResultSchema = z.object({
   status: CareerRunStatusSchema,
   jobsDiscovered: z.number().int().min(0),
   jobsAfterFiltering: z.number().int().min(0),
+  /** Jobs Claude successfully evaluated (any recommendation, pre-gate) — NOT the shortlist count. See topJobs.length for how many actually qualified. */
   jobsMatched: z.number().int().min(0),
   matchingFailures: z.number().int().min(0),
-  topJobs: z.array(DiscoverMatchTopJobSchema)
+  /** Career Relevance Gate (Phase 8.3) — jobs whose TITLE was a hard negative (help desk/service desk/IT support/sysadmin/NOC/etc.) and were never sent to Claude at all. */
+  relevanceFiltered: z.number().int().min(0),
+  /** Only jobs that passed the full Career Relevance Gate: careerRelevanceScore >= 70 AND matchScore >= 70 AND recommendation in {APPLY, CONSIDER}. A REJECT recommendation never appears here. */
+  topJobs: z.array(DiscoverMatchTopJobSchema),
+  /** Per-source discovery diagnostics (Phase 8.4 §12) — one source failing never fails the whole run; see SourceDiagnosticSchema. */
+  sources: z.array(SourceDiagnosticSchema)
 });
 export type DiscoverMatchResult = z.infer<typeof DiscoverMatchResultSchema>;

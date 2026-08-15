@@ -172,7 +172,19 @@ export async function runCareerPipeline(input: CareerRunInput, deps: CareerRunDe
     jobsAfterFiltering = discovery.jobsAfterFiltering;
     jobsMatched = discovery.jobs.length;
     rankedJobs = discovery.rankedJobs ?? [];
-    log({ runId, stage: "discovery", jobsDiscovered, jobsAfterFiltering, jobsMatched });
+    log({
+      runId,
+      stage: "discovery",
+      jobsDiscovered,
+      jobsAfterFiltering,
+      jobsMatched,
+      // Diagnostic only: each entry's `error` is already reduced to a safe
+      // "ErrorName: message" string by toSafeErrorMessage() at the source
+      // (jobAnalysisService.ts) — never a raw payload, resume, or secret.
+      claudeMatchFailures: discovery.claudeFailures?.length
+        ? discovery.claudeFailures.map((f) => f.error)
+        : undefined
+    });
   } catch (error) {
     log({ runId, stage: "discovery", status: "error", errorType: error instanceof Error ? error.name : "Unknown" });
     const completedAt = new Date();

@@ -24,7 +24,12 @@ import {
 } from "../utils/errors.js";
 import { formatZodIssues } from "../utils/zod.js";
 
-const APPLICATION_MESSAGE_MAX_OUTPUT_TOKENS = 800;
+// Raised from 800 (2026-08-15): production runs showed "response was not
+// valid JSON" — the classic signature of output truncated mid-generation —
+// on this step specifically. The requested message itself is short
+// (~150 words), but 800 tokens leaves little margin if the model produces
+// any reasoning/preamble before the JSON. See docs/DEPLOYMENT.md.
+const APPLICATION_MESSAGE_MAX_OUTPUT_TOKENS = 2_000;
 // Raised from 2 to 3 attempts, and 429 added to isRetryable() (2026-08-15):
 // production runs on Vercel showed transient failures — including a rate
 // limit-shaped response and a response with no text content block — on an

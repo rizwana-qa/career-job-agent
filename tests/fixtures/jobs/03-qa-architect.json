@@ -1,0 +1,26 @@
+{
+  "jobTitle": "QA Architect",
+  "company": "Ironclad Systems",
+  "location": "Remote",
+  "country": "United Kingdom",
+  "remoteStatus": "REMOTE",
+  "employmentType": "FULL_TIME",
+  "jobDescription": "Design the quality engineering architecture for a portfolio of enterprise products, including test framework standards, tooling strategy, and CI-ready automation architecture spanning multiple product teams.",
+  "requirements": [
+    "Proven experience architecting test automation frameworks at scale",
+    "Deep knowledge of API testing and backend validation",
+    "Experience setting quality standards across multiple teams",
+    "Strong communication and cross-functional leadership skills"
+  ],
+  "responsibilities": [
+    "Define the quality engineering architecture and tooling roadmap",
+    "Establish framework standards adopted across product teams",
+    "Review and approve test automation architecture decisions",
+    "Advise engineering leadership on quality strategy"
+  ],
+  "skills": ["Test Architecture", "Playwright", "API Testing", "CI/CD", "Framework Design"],
+  "source": "manual",
+  "sourceUrl": "https://example.com/jobs/ironclad-qa-architect",
+  "datePosted": "2026-06-28",
+  "externalJobId": "IRC-ARCH-QA-007"
+}

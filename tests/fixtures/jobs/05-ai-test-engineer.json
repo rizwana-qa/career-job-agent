@@ -1,0 +1,28 @@
+{
+  "jobTitle": "AI Test Engineer",
+  "company": "Harlow Enterprise Systems",
+  "location": "Austin, TX",
+  "country": "United States",
+  "remoteStatus": "HYBRID",
+  "employmentType": "FULL_TIME",
+  "jobDescription": "Test AI-assisted features across our enterprise platform, covering agentic workflows, chatbot behavior, and integration between AI services and existing backend systems.",
+  "requirements": [
+    "4+ years of software testing experience",
+    "Experience testing AI-assisted or chatbot-driven features",
+    "Solid API testing and backend integration testing background",
+    "Exposure to agent frameworks or orchestration tools is a plus"
+  ],
+  "responsibilities": [
+    "Test AI-assisted workflows for correctness and consistency",
+    "Validate chatbot behavior against expected outcomes",
+    "Build automated test coverage for AI-integrated APIs",
+    "Report and triage AI-specific defects alongside standard defects"
+  ],
+  "skills": ["AI Testing", "API Testing", "Chatbot Testing", "Automation", "Postman"],
+  "source": "manual",
+  "sourceUrl": "https://example.com/jobs/harlow-ai-test-engineer",
+  "datePosted": "2026-07-10",
+  "salary": 138000,
+  "currency": "USD",
+  "externalJobId": "HES-AITE-009"
+}

@@ -1,0 +1,28 @@
+{
+  "jobTitle": "AI Quality Engineer",
+  "company": "Vantage AI",
+  "location": "Remote",
+  "country": "United States",
+  "remoteStatus": "REMOTE",
+  "employmentType": "FULL_TIME",
+  "jobDescription": "Own quality validation for our generative AI product suite, including retrieval accuracy testing, hallucination detection, and vector database validation for a production RAG-based platform.",
+  "requirements": [
+    "5+ years of QA/test engineering experience",
+    "Hands-on experience testing RAG-based or LLM-powered platforms",
+    "Familiarity with hallucination detection and retrieval accuracy validation",
+    "Comfortable working closely with AI/ML engineering teams"
+  ],
+  "responsibilities": [
+    "Design and run test suites for retrieval accuracy and hallucination detection",
+    "Validate vector database updates and access permissions",
+    "Build automated regression coverage for AI-driven features",
+    "Partner with AI engineering on quality standards for model releases"
+  ],
+  "skills": ["RAG Testing", "Hallucination Detection", "Vector Databases", "API Testing", "Python"],
+  "source": "manual",
+  "sourceUrl": "https://example.com/jobs/vantage-ai-quality-engineer",
+  "datePosted": "2026-07-25",
+  "salary": 165000,
+  "currency": "USD",
+  "externalJobId": "VAI-AIQ-022"
+}

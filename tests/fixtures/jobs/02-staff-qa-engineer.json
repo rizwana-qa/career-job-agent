@@ -1,0 +1,28 @@
+{
+  "jobTitle": "Staff QA Engineer",
+  "company": "Northbeam SaaS",
+  "location": "Toronto",
+  "country": "Canada",
+  "remoteStatus": "HYBRID",
+  "employmentType": "FULL_TIME",
+  "jobDescription": "Drive automation architecture and quality strategy for a multi-tenant SaaS platform. Work cross-functionally with product and platform engineering to reduce regression risk across a rapidly growing codebase.",
+  "requirements": [
+    "8+ years of software testing and automation experience",
+    "Hands-on Playwright or similar UI/API automation experience",
+    "Experience designing CI-integrated test frameworks",
+    "Strong SQL and backend validation skills"
+  ],
+  "responsibilities": [
+    "Design and maintain the API and UI automation framework",
+    "Establish quality gates within the CI/CD pipeline",
+    "Partner with engineering on release readiness",
+    "Coach mid-level QA engineers on automation best practices"
+  ],
+  "skills": ["Playwright", "CI/CD", "API Testing", "SQL", "Test Automation"],
+  "source": "manual",
+  "sourceUrl": "https://example.com/jobs/northbeam-staff-qa-engineer",
+  "datePosted": "2026-07-20",
+  "salary": 128000,
+  "currency": "CAD",
+  "externalJobId": "NB-STAFF-QA-014"
+}

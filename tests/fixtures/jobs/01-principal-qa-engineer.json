@@ -1,0 +1,28 @@
+{
+  "jobTitle": "Principal QA Engineer",
+  "company": "Meridian Fintech",
+  "location": "Remote",
+  "country": "United States",
+  "remoteStatus": "REMOTE",
+  "employmentType": "FULL_TIME",
+  "jobDescription": "Own test strategy and quality engineering direction across our banking platform. Lead defect triage, regression scoping, and release quality gates for a regulated fintech product used by millions of customers.",
+  "requirements": [
+    "10+ years in software quality engineering",
+    "Proven ownership of test strategy for a regulated product",
+    "Deep experience with API and backend testing",
+    "Experience mentoring senior and staff-level QA engineers"
+  ],
+  "responsibilities": [
+    "Own end-to-end test strategy across web, mobile, and API surfaces",
+    "Lead defect lifecycle management and regression scoping",
+    "Partner with engineering leadership on release quality gates",
+    "Mentor senior QA engineers and drive automation framework standards"
+  ],
+  "skills": ["Playwright", "API Testing", "SQL", "Test Strategy", "Defect Management", "Agile"],
+  "source": "manual",
+  "sourceUrl": "https://example.com/jobs/meridian-fintech-principal-qa-engineer",
+  "datePosted": "2026-07-15",
+  "salary": 195000,
+  "currency": "USD",
+  "externalJobId": "MER-QA-PRIN-001"
+}

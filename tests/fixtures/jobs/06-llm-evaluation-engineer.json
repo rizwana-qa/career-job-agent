@@ -1,0 +1,26 @@
+{
+  "jobTitle": "LLM Evaluation Engineer",
+  "company": "Cascade Frontier Labs",
+  "location": "Remote",
+  "country": "United States",
+  "remoteStatus": "REMOTE",
+  "employmentType": "CONTRACT",
+  "jobDescription": "Build and run evaluation frameworks for large language model outputs, including benchmark design, eval harness development, and quality scoring for model releases across multiple product surfaces.",
+  "requirements": [
+    "Experience building or operating LLM evaluation frameworks (e.g. Ragas, TruLens, DeepEval)",
+    "Python proficiency for eval tooling and scripting",
+    "Understanding of retrieval-augmented generation pipelines",
+    "Comfortable working directly with ML research teams"
+  ],
+  "responsibilities": [
+    "Design and maintain LLM evaluation benchmarks",
+    "Run and analyze evaluation suites against new model releases",
+    "Flag quality regressions before releases ship",
+    "Document evaluation methodology for internal and external use"
+  ],
+  "skills": ["LLM Evaluation", "Python", "Ragas", "RAG Pipelines", "Benchmarking"],
+  "source": "manual",
+  "sourceUrl": "https://example.com/jobs/cascade-llm-evaluation-engineer",
+  "datePosted": "2026-08-01",
+  "externalJobId": "CFL-LLME-041"
+}

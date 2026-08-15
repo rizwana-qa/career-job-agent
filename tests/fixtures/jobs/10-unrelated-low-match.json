@@ -1,0 +1,28 @@
+{
+  "jobTitle": "Regional Sales Manager",
+  "company": "Crestline Beverages",
+  "location": "Miami, FL",
+  "country": "United States",
+  "remoteStatus": "ONSITE",
+  "employmentType": "FULL_TIME",
+  "jobDescription": "Lead a regional sales team responsible for growing distribution partnerships across the southeastern United States, managing key accounts and quarterly revenue targets.",
+  "requirements": [
+    "5+ years of B2B sales management experience",
+    "Proven track record hitting quarterly revenue targets",
+    "Experience managing distributor relationships",
+    "Willingness to travel regionally up to 40%"
+  ],
+  "responsibilities": [
+    "Manage and grow a team of regional sales representatives",
+    "Own key distributor account relationships",
+    "Report on quarterly revenue performance to leadership",
+    "Develop territory growth strategy"
+  ],
+  "skills": ["Sales Management", "Account Management", "Negotiation", "CRM", "Forecasting"],
+  "source": "manual",
+  "sourceUrl": "https://example.com/jobs/crestline-regional-sales-manager",
+  "datePosted": "2026-07-22",
+  "salary": 95000,
+  "currency": "USD",
+  "externalJobId": "CB-SALES-029"
+}

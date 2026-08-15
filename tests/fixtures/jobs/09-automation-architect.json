@@ -1,0 +1,28 @@
+{
+  "jobTitle": "Automation Architect",
+  "company": "Solstice Retail Group",
+  "location": "Remote",
+  "country": "Germany",
+  "remoteStatus": "REMOTE",
+  "employmentType": "FULL_TIME",
+  "jobDescription": "Own the automation architecture strategy for a large-scale e-commerce platform, defining framework standards, tooling selection, and CI/CD integration across multiple product squads.",
+  "requirements": [
+    "7+ years designing test automation architecture",
+    "Deep Playwright or Selenium framework design experience",
+    "Strong understanding of CI/CD pipeline integration",
+    "Experience setting automation standards across multiple teams"
+  ],
+  "responsibilities": [
+    "Define the automation framework architecture and standards",
+    "Evaluate and select automation tooling across the organization",
+    "Integrate automated test suites into CI/CD pipelines",
+    "Guide automation engineers on framework best practices"
+  ],
+  "skills": ["Test Automation Architecture", "Playwright", "Selenium", "CI/CD", "Framework Design"],
+  "source": "manual",
+  "sourceUrl": "https://example.com/jobs/solstice-automation-architect",
+  "datePosted": "2026-07-18",
+  "salary": 98000,
+  "currency": "EUR",
+  "externalJobId": "SRG-AUTOARCH-011"
+}

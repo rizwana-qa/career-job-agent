@@ -1,0 +1,28 @@
+{
+  "jobTitle": "Senior SDET",
+  "company": "Bluewater Logistics",
+  "location": "Chicago, IL",
+  "country": "United States",
+  "remoteStatus": "ONSITE",
+  "employmentType": "FULL_TIME",
+  "jobDescription": "Build and maintain automated test coverage across our logistics platform's web and API surfaces, working closely with development teams to embed quality earlier in the delivery pipeline.",
+  "requirements": [
+    "5+ years as an SDET or automation-focused QA engineer",
+    "Strong Playwright or equivalent UI automation experience",
+    "Solid understanding of REST API testing",
+    "Experience working within an Agile Scrum team"
+  ],
+  "responsibilities": [
+    "Build and maintain UI and API automation suites",
+    "Integrate automated tests into the CI pipeline",
+    "Collaborate with developers on testability and quality gates",
+    "Investigate and report automation failures and flaky tests"
+  ],
+  "skills": ["Playwright", "API Testing", "CI/CD", "Agile", "JavaScript"],
+  "source": "manual",
+  "sourceUrl": "https://example.com/jobs/bluewater-senior-sdet",
+  "datePosted": "2026-07-05",
+  "salary": 132000,
+  "currency": "USD",
+  "externalJobId": "BWL-SDET-018"
+}

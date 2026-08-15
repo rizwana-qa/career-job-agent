@@ -1,0 +1,26 @@
+{
+  "jobTitle": "Quality Engineering Lead",
+  "company": "Falkirk Health Systems",
+  "location": "Dubai",
+  "country": "UAE",
+  "remoteStatus": "HYBRID",
+  "employmentType": "FULL_TIME",
+  "jobDescription": "Lead the quality engineering function for a healthcare technology platform, owning test strategy, defect governance, and cross-functional quality processes across a regulated, multi-market product.",
+  "requirements": [
+    "8+ years of quality engineering experience, including regulated industries",
+    "Experience leading test strategy and defect governance",
+    "Strong API and database validation background",
+    "Experience working with distributed/offshore engineering teams"
+  ],
+  "responsibilities": [
+    "Own quality engineering strategy across the healthcare platform",
+    "Lead defect governance and release readiness reviews",
+    "Manage and mentor a distributed QA team",
+    "Partner with compliance on regulated testing requirements"
+  ],
+  "skills": ["Test Strategy", "Leadership", "API Testing", "SQL", "Regulatory Compliance"],
+  "source": "manual",
+  "sourceUrl": "https://example.com/jobs/falkirk-quality-engineering-lead",
+  "datePosted": "2026-06-15",
+  "externalJobId": "FHS-QEL-003"
+}

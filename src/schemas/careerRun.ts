@@ -33,6 +33,20 @@ export const CareerRunTopJobSchema = z.object({
 });
 export type CareerRunTopJob = z.infer<typeof CareerRunTopJobSchema>;
 
+/**
+ * Safe summary only — a count and a boolean flag, never the underlying
+ * Claude error text or payload (toSafeErrorMessage() in utils/errors.ts can
+ * still include the raw provider error body, e.g. a full Anthropic 400
+ * response — that's fine for server-side logs but too much detail for an
+ * API response). Lets n8n know Job Matching partially or fully failed
+ * without exposing any error/prompt/profile/resume content.
+ */
+export const CareerRunMatchingFailuresSchema = z.object({
+  count: z.number().int().min(0),
+  hasFailures: z.boolean()
+});
+export type CareerRunMatchingFailures = z.infer<typeof CareerRunMatchingFailuresSchema>;
+
 export const CareerRunResultSchema = z.object({
   runId: z.string(),
   status: CareerRunStatusSchema,
@@ -42,6 +56,7 @@ export const CareerRunResultSchema = z.object({
   topJobs: z.array(CareerRunTopJobSchema),
   applicationPackagesCreated: z.number().int().min(0),
   whatsappNotificationsSent: z.number().int().min(0),
+  matchingFailures: CareerRunMatchingFailuresSchema,
   dryRun: z.boolean(),
   startedAt: z.string(),
   completedAt: z.string()

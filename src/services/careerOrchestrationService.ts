@@ -26,20 +26,34 @@ import { InvalidOrchestrationInputError, toSafeErrorMessage } from "../utils/err
 import { formatZodIssues } from "../utils/zod.js";
 
 // --- Idempotency: simple in-memory store, no database (Phase 8 spec §7) ---
+//
+// Generic over the cached result shape (Phase 8.2) so /career/discover-match
+// and /career/process-job can each get their own store instance without a
+// second parallel implementation of the same class. Defaults the type param
+// to CareerRunResult so every existing /career/run call site is unaffected.
+//
+// KNOWN VERCEL LIMITATION (see docs/N8N_INTEGRATION.md and the Phase 8.1
+// design report): this Map lives in one process's memory. Vercel does not
+// guarantee that a retried request lands on the same warm instance as the
+// original, so a duplicate request landing on a different instance will NOT
+// be caught by this store — it will silently re-run the pipeline/stage and
+// incur duplicate Claude spend. This is a pre-existing, documented gap, not
+// something Phase 8.2 introduces or claims to fix; closing it fully would
+// require a shared/persistent store, which is out of scope here.
 
-export interface IdempotencyStore {
-  get(key: string): CareerRunResult | undefined;
-  set(key: string, result: CareerRunResult): void;
+export interface IdempotencyStore<T = CareerRunResult> {
+  get(key: string): T | undefined;
+  set(key: string, result: T): void;
 }
 
 const DEFAULT_IDEMPOTENCY_TTL_MS = 24 * 60 * 60 * 1000;
 
-export class InMemoryIdempotencyStore implements IdempotencyStore {
-  private readonly store = new Map<string, { result: CareerRunResult; expiresAt: number }>();
+export class InMemoryIdempotencyStore<T = CareerRunResult> implements IdempotencyStore<T> {
+  private readonly store = new Map<string, { result: T; expiresAt: number }>();
 
   constructor(private readonly ttlMs: number = DEFAULT_IDEMPOTENCY_TTL_MS) {}
 
-  get(key: string): CareerRunResult | undefined {
+  get(key: string): T | undefined {
     const entry = this.store.get(key);
     if (!entry) {
       return undefined;
@@ -51,7 +65,7 @@ export class InMemoryIdempotencyStore implements IdempotencyStore {
     return entry.result;
   }
 
-  set(key: string, result: CareerRunResult): void {
+  set(key: string, result: T): void {
     this.store.set(key, { result, expiresAt: Date.now() + this.ttlMs });
   }
 }
@@ -95,8 +109,20 @@ function toTopJobSummary(ranked: RankedJob, applicationStatus: CareerRunTopJob["
   };
 }
 
+/**
+ * Fixed 2026-08-15: status previously only tracked failures from the
+ * per-job pipeline (tailoring/evidence/QA/package) via hadPerJobFailures,
+ * never the earlier Job Matching stage. When every eligible job failed to
+ * match (e.g. Claude account out of credit), rankedJobs ended up empty, the
+ * per-job loop below never ran even once, hadPerJobFailures stayed false,
+ * and this fell through to COMPLETED — reporting total matching failure as
+ * a normal successful run with jobsMatched: 0. See docs/DEPLOYMENT.md.
+ */
 function determineStatus(
   jobsDiscovered: number,
+  jobsAfterFiltering: number,
+  jobsMatched: number,
+  matchingFailureCount: number,
   packageResults: ApplicationPackageResult[],
   hadPerJobFailures: boolean,
   whatsappFailed: boolean
@@ -104,10 +130,16 @@ function determineStatus(
   if (jobsDiscovered === 0) {
     return "COMPLETED"; // legitimately nothing to process — not a failure
   }
+  // Every eligible job failed to match — nothing downstream could possibly
+  // have run, so this is a hard failure regardless of the (necessarily
+  // empty) per-job pipeline result.
+  if (jobsAfterFiltering > 0 && jobsMatched === 0 && matchingFailureCount > 0) {
+    return "FAILED";
+  }
   if (packageResults.length === 0 && hadPerJobFailures) {
     return "FAILED";
   }
-  if (hadPerJobFailures || whatsappFailed) {
+  if (hadPerJobFailures || whatsappFailed || matchingFailureCount > 0) {
     return "PARTIAL";
   }
   return "COMPLETED";
@@ -153,6 +185,7 @@ export async function runCareerPipeline(input: CareerRunInput, deps: CareerRunDe
   let jobsDiscovered = 0;
   let jobsAfterFiltering = 0;
   let jobsMatched = 0;
+  let matchingFailureCount = 0;
   let rankedJobs: RankedJob[] = [];
 
   try {
@@ -171,6 +204,7 @@ export async function runCareerPipeline(input: CareerRunInput, deps: CareerRunDe
     jobsDiscovered = discovery.jobsFound;
     jobsAfterFiltering = discovery.jobsAfterFiltering;
     jobsMatched = discovery.jobs.length;
+    matchingFailureCount = discovery.claudeFailures?.length ?? 0;
     rankedJobs = discovery.rankedJobs ?? [];
     log({
       runId,
@@ -197,6 +231,7 @@ export async function runCareerPipeline(input: CareerRunInput, deps: CareerRunDe
       topJobs: [],
       applicationPackagesCreated: 0,
       whatsappNotificationsSent: 0,
+      matchingFailures: { count: 0, hasFailures: false }, // discovery itself threw — no per-job matching was ever attempted
       dryRun: options.dryRun,
       startedAt: startedAt.toISOString(),
       completedAt: completedAt.toISOString()
@@ -277,7 +312,15 @@ export async function runCareerPipeline(input: CareerRunInput, deps: CareerRunDe
     }
   }
 
-  const status = determineStatus(jobsDiscovered, packageResults, hadPerJobFailures, whatsappFailed);
+  const status = determineStatus(
+    jobsDiscovered,
+    jobsAfterFiltering,
+    jobsMatched,
+    matchingFailureCount,
+    packageResults,
+    hadPerJobFailures,
+    whatsappFailed
+  );
   const completedAt = new Date();
 
   const result: CareerRunResult = {
@@ -289,6 +332,7 @@ export async function runCareerPipeline(input: CareerRunInput, deps: CareerRunDe
     topJobs: topJobSummaries,
     applicationPackagesCreated,
     whatsappNotificationsSent,
+    matchingFailures: { count: matchingFailureCount, hasFailures: matchingFailureCount > 0 },
     dryRun: options.dryRun,
     startedAt: startedAt.toISOString(),
     completedAt: completedAt.toISOString()

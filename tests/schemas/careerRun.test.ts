@@ -62,9 +62,47 @@ describe("CareerRunResultSchema", () => {
       ],
       applicationPackagesCreated: 1,
       whatsappNotificationsSent: 0,
+      matchingFailures: { count: 0, hasFailures: false },
       dryRun: true,
       startedAt: "2026-08-15T00:00:00.000Z",
       completedAt: "2026-08-15T00:00:05.000Z"
+    });
+
+    expect(result.success).toBe(true);
+  });
+
+  it("rejects a result missing matchingFailures", () => {
+    const result = CareerRunResultSchema.safeParse({
+      runId: "11111111-1111-1111-1111-111111111111",
+      status: "COMPLETED",
+      jobsDiscovered: 0,
+      jobsAfterFiltering: 0,
+      jobsMatched: 0,
+      topJobs: [],
+      applicationPackagesCreated: 0,
+      whatsappNotificationsSent: 0,
+      dryRun: true,
+      startedAt: "x",
+      completedAt: "x"
+    });
+
+    expect(result.success).toBe(false);
+  });
+
+  it("validates matchingFailures with count and hasFailures", () => {
+    const result = CareerRunResultSchema.safeParse({
+      runId: "x",
+      status: "FAILED",
+      jobsDiscovered: 12,
+      jobsAfterFiltering: 12,
+      jobsMatched: 0,
+      topJobs: [],
+      applicationPackagesCreated: 0,
+      whatsappNotificationsSent: 0,
+      matchingFailures: { count: 12, hasFailures: true },
+      dryRun: true,
+      startedAt: "x",
+      completedAt: "x"
     });
 
     expect(result.success).toBe(true);

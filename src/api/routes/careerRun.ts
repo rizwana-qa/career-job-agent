@@ -10,8 +10,8 @@ import {
   runCareerPipeline,
   type IdempotencyStore
 } from "../../services/careerOrchestrationService.js";
-import { env } from "../../config/env.js";
 import { ClaudeNotConfiguredError, InvalidOrchestrationInputError, toSafeErrorMessage } from "../../utils/errors.js";
+import { authenticateCareerAgentRequest } from "./careerAuth.js";
 
 export interface CareerRunRouterDependencies {
   jobSource?: JobSource;
@@ -54,22 +54,7 @@ export function createCareerRunRouter(deps: CareerRunRouterDependencies = {}): R
   const router = Router();
 
   router.post("/career/run", async (req, res) => {
-    const configuredApiKey = deps.apiKey ?? env.careerAgentApiKey;
-    if (!configuredApiKey) {
-      res.status(503).json({ error: "Orchestration API is not configured" });
-      return;
-    }
-
-    const authHeader = req.header("Authorization") ?? "";
-    const match = authHeader.match(/^Bearer (.+)$/);
-    const providedKey = match?.[1];
-
-    if (!providedKey) {
-      res.status(401).json({ error: "Missing API key" });
-      return;
-    }
-    if (providedKey !== configuredApiKey) {
-      res.status(401).json({ error: "Invalid API key" });
+    if (!authenticateCareerAgentRequest(req, res, deps.apiKey)) {
       return;
     }
 

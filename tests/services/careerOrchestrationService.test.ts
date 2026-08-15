@@ -241,6 +241,7 @@ describe("runCareerPipeline — successful dry run (default)", () => {
     expect(result.jobsMatched).toBe(1);
     expect(result.applicationPackagesCreated).toBe(1);
     expect(result.whatsappNotificationsSent).toBe(0);
+    expect(result.matchingFailures).toEqual({ count: 0, hasFailures: false });
     expect(notificationProvider.sendNotification).not.toHaveBeenCalled();
     expect(claudeClient.messages.create).toHaveBeenCalledTimes(5);
   });
@@ -313,7 +314,84 @@ describe("runCareerPipeline — empty job results", () => {
     expect(result.jobsMatched).toBe(0);
     expect(result.topJobs).toEqual([]);
     expect(result.applicationPackagesCreated).toBe(0);
+    expect(result.matchingFailures).toEqual({ count: 0, hasFailures: false });
     expect(claudeClient.messages.create).not.toHaveBeenCalled();
+  });
+});
+
+describe("runCareerPipeline — Job Matching failure visibility (Phase 6.1)", () => {
+  it("returns PARTIAL with matchingFailures reported when some jobs match and some fail matching", async () => {
+    const jobs = [
+      rawJob({ externalJobId: "1", sourceUrl: "https://remotive.com/job-1", jobTitle: "Quality Engineer One" }),
+      rawJob({ externalJobId: "2", sourceUrl: "https://remotive.com/job-2", jobTitle: "Quality Engineer Two" })
+    ];
+    // job 1's match succeeds and goes through the full downstream pipeline;
+    // job 2's match call fails outright (never reaches downstream at all).
+    const claudeClient = queueClaudeClient([
+      matchJson({ matchScore: 90 }), // job 1 match — succeeds
+      nonRetryableFailure, // job 2 match — fails, non-retryable
+      ...fullSuccessSequence().slice(1) // job 1: tailor, evidence, qa, application message
+    ]);
+    const jobSource = fakeJobSource(jobs);
+
+    const result = await runCareerPipeline({ options: { topJobs: 2 } }, baseDeps({ claudeClient, jobSource }));
+
+    expect(result.status).toBe("PARTIAL");
+    expect(result.jobsDiscovered).toBe(2);
+    expect(result.jobsAfterFiltering).toBe(2);
+    expect(result.jobsMatched).toBe(1);
+    expect(result.matchingFailures).toEqual({ count: 1, hasFailures: true });
+    expect(result.applicationPackagesCreated).toBe(1);
+  });
+
+  it("returns FAILED with matchingFailures reported when every eligible job fails to match (regression: 12 filtered jobs, 12 matching failures, 0 matched)", async () => {
+    const jobs = Array.from({ length: 12 }, (_, i) =>
+      rawJob({
+        externalJobId: String(i + 1),
+        sourceUrl: `https://remotive.com/job-${i + 1}`,
+        jobTitle: `Quality Engineer ${i + 1}`
+      })
+    );
+    const claudeClient = queueClaudeClient(jobs.map(() => nonRetryableFailure));
+    const jobSource = fakeJobSource(jobs);
+
+    const result = await runCareerPipeline({ options: { maxJobs: 12, topJobs: 12 } }, baseDeps({ claudeClient, jobSource }));
+
+    expect(result.status).toBe("FAILED");
+    expect(result.jobsDiscovered).toBe(12);
+    expect(result.jobsAfterFiltering).toBe(12);
+    expect(result.jobsMatched).toBe(0);
+    expect(result.matchingFailures).toEqual({ count: 12, hasFailures: true });
+    expect(result.topJobs).toEqual([]);
+    expect(result.applicationPackagesCreated).toBe(0);
+    // Only the per-job matching call is consumed for each failure — no
+    // downstream (tailor/evidence/QA/package) calls happen for a job whose
+    // match never succeeded.
+    expect(claudeClient.messages.create).toHaveBeenCalledTimes(12);
+  });
+
+  it("never exposes raw Claude error text or payloads in matchingFailures", async () => {
+    const jobs = [rawJob({ externalJobId: "1", sourceUrl: "https://remotive.com/job-1" })];
+    const claudeClient = queueClaudeClient([
+      () => {
+        throw Object.assign(new Error('400 {"type":"error","error":{"message":"Your credit balance is too low..."}}'), {
+          status: 400
+        });
+      }
+    ]);
+    const jobSource = fakeJobSource(jobs);
+
+    const result = await runCareerPipeline({ options: {} }, baseDeps({ claudeClient, jobSource }));
+
+    expect(result.status).toBe("FAILED");
+    expect(result.matchingFailures).toEqual({ count: 1, hasFailures: true });
+
+    const serialized = JSON.stringify(result);
+    expect(serialized).not.toContain("credit balance");
+    expect(serialized).not.toContain("type\":\"error\"");
+    // matchingFailures must be exactly {count, hasFailures} — no extra keys
+    // like an error message, category, or raw payload snuck in.
+    expect(Object.keys(result.matchingFailures).sort()).toEqual(["count", "hasFailures"]);
   });
 });
 

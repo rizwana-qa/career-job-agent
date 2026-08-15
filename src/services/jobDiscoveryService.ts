@@ -67,6 +67,8 @@ export interface DiscoverJobsResult {
   rankedJobs?: RankedJob[];
   /** Only present when `preMatchFilter` was supplied — see jobAnalysisService.ts. */
   relevanceFilteredCount?: number;
+  /** Only present when `preMatchFilter` was supplied (Phase 8.3.3) — see jobAnalysisService.ts. */
+  jobsSentToMatching?: number;
   /** Only present when `jobSources` (plural) was supplied — see SourceDiagnostic above. */
   sourceDiagnostics?: SourceDiagnostic[];
 }
@@ -194,6 +196,9 @@ export async function discoverJobs(input: DiscoverJobsInput, deps: DiscoverJobsD
   }
   if (analysis.relevanceFilteredCount !== undefined) {
     result.relevanceFilteredCount = analysis.relevanceFilteredCount;
+  }
+  if (analysis.jobsSentToMatching !== undefined) {
+    result.jobsSentToMatching = analysis.jobsSentToMatching;
   }
   if (sourceDiagnostics) {
     result.sourceDiagnostics = sourceDiagnostics;

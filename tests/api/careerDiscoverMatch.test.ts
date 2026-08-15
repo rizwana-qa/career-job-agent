@@ -230,10 +230,13 @@ describe("POST /career/discover-match — zero results", () => {
 
 describe("POST /career/discover-match — ranking and topJobs", () => {
   it("returns topJobs sorted by careerScore (higher match first) and honors the topJobs limit", async () => {
+    // Titled "QA Engineer - <label>" rather than a bare label so each job
+    // clears the Phase 8.3.3 positive pre-Claude filter on title alone —
+    // this test isolates ranking + the topJobs cap, not the pre-Claude filter.
     const jobs = [
-      rawJob({ externalJobId: "1", sourceUrl: "https://remotive.com/job-1", jobTitle: "Lower Match" }),
-      rawJob({ externalJobId: "2", sourceUrl: "https://remotive.com/job-2", jobTitle: "Higher Match" }),
-      rawJob({ externalJobId: "3", sourceUrl: "https://remotive.com/job-3", jobTitle: "Middle Match" })
+      rawJob({ externalJobId: "1", sourceUrl: "https://remotive.com/job-1", jobTitle: "QA Engineer - Lower Match" }),
+      rawJob({ externalJobId: "2", sourceUrl: "https://remotive.com/job-2", jobTitle: "QA Engineer - Higher Match" }),
+      rawJob({ externalJobId: "3", sourceUrl: "https://remotive.com/job-3", jobTitle: "QA Engineer - Middle Match" })
     ];
     const claudeClient = queueClaudeClient([
       matchJson({ matchScore: 78 }), // job 1 — lowest of the three, but still passes the gate on its own
@@ -253,8 +256,8 @@ describe("POST /career/discover-match — ranking and topJobs", () => {
     // isolates ranking + the topJobs cap, not gate rejection (that's
     // covered separately in the Career Relevance Gate test suite below).
     expect(body.topJobs).toHaveLength(2); // topJobs: 2 caps the result, even though 3 jobs matched
-    expect(body.topJobs[0].jobTitle).toBe("Higher Match");
-    expect(body.topJobs[1].jobTitle).toBe("Middle Match");
+    expect(body.topJobs[0].jobTitle).toBe("QA Engineer - Higher Match");
+    expect(body.topJobs[1].jobTitle).toBe("QA Engineer - Middle Match");
   });
 });
 

@@ -91,6 +91,8 @@ describe("DiscoverMatchResultSchema", () => {
       jobsMatched: 5,
       matchingFailures: 0,
       relevanceFiltered: 2,
+      preMatchFiltered: 2,
+      jobsSentToMatching: 6,
       sources: [{ name: "remotive", status: "OK", jobsFound: 10 }],
       topJobs: [validTopJob()]
     });
@@ -105,6 +107,8 @@ describe("DiscoverMatchResultSchema", () => {
       jobsMatched: 0,
       matchingFailures: 0,
       relevanceFiltered: 0,
+      preMatchFiltered: 0,
+      jobsSentToMatching: 0,
       sources: [],
       topJobs: []
     });
@@ -121,6 +125,8 @@ describe("DiscoverMatchResultSchema", () => {
       jobsMatched: 1,
       matchingFailures: 0,
       relevanceFiltered: 0,
+      preMatchFiltered: 0,
+      jobsSentToMatching: 0,
       sources: [],
       topJobs: [topJob]
     });
@@ -137,6 +143,8 @@ describe("DiscoverMatchResultSchema", () => {
       jobsMatched: 1,
       matchingFailures: 0,
       relevanceFiltered: 0,
+      preMatchFiltered: 0,
+      jobsSentToMatching: 0,
       sources: [],
       topJobs: [topJob]
     });
@@ -151,6 +159,8 @@ describe("DiscoverMatchResultSchema", () => {
       jobsMatched: 0,
       matchingFailures: -1,
       relevanceFiltered: 0,
+      preMatchFiltered: 0,
+      jobsSentToMatching: 0,
       sources: [],
       topJobs: []
     });
@@ -165,6 +175,8 @@ describe("DiscoverMatchResultSchema", () => {
       jobsMatched: 0,
       matchingFailures: 0,
       relevanceFiltered: -1,
+      preMatchFiltered: 0,
+      jobsSentToMatching: 0,
       sources: [],
       topJobs: []
     });
@@ -179,6 +191,8 @@ describe("DiscoverMatchResultSchema", () => {
       jobsMatched: 0,
       matchingFailures: 0,
       relevanceFiltered: 0,
+      preMatchFiltered: 0,
+      jobsSentToMatching: 0,
       sources: [],
       topJobs: []
     });
@@ -193,6 +207,8 @@ describe("DiscoverMatchResultSchema", () => {
       jobsMatched: 0,
       matchingFailures: 0,
       relevanceFiltered: 0,
+      preMatchFiltered: 0,
+      jobsSentToMatching: 0,
       sources: [{ name: "indeed", status: "DISABLED" }],
       topJobs: []
     });
@@ -207,6 +223,8 @@ describe("DiscoverMatchResultSchema", () => {
       jobsMatched: 5,
       matchingFailures: 0,
       relevanceFiltered: 0,
+      preMatchFiltered: 0,
+      jobsSentToMatching: 5,
       sources: [
         { name: "remotive", status: "OK", jobsFound: 10 },
         { name: "indeed", status: "FAILED" }

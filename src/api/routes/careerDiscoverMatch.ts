@@ -10,6 +10,7 @@ import {
 import { discoverJobs } from "../../services/jobDiscoveryService.js";
 import { getEnabledJobSources } from "../../jobSources/jobSourceRegistry.js";
 import type { JobSource } from "../../jobSources/jobSource.js";
+import type { Job } from "../../schemas/job.js";
 import type { RankedJob, RankingOptions } from "../../ranking/jobRanking.js";
 import {
   DiscoverMatchRequestSchema,
@@ -21,6 +22,7 @@ import type { CareerRunStatus } from "../../schemas/careerRun.js";
 import { InMemoryIdempotencyStore, type IdempotencyStore } from "../../services/careerOrchestrationService.js";
 import {
   isHardNegativeRole,
+  hasPositiveCareerSignal,
   CAREER_RELEVANCE_SCORE_THRESHOLD,
   MATCH_SCORE_THRESHOLD,
   SHORTLIST_ELIGIBLE_RECOMMENDATIONS
@@ -145,6 +147,49 @@ function describeGateRejectionReasons(ranked: RankedJob): string[] {
   return reasons;
 }
 
+/**
+ * Pre-Claude deterministic pipeline (Phase 8.3.3): Location eligibility ->
+ * Hard negative title filter -> Positive career relevance prefilter,
+ * checked in that order so the logged rejection reason always reflects the
+ * FIRST stage that actually rejected a job. Strengthens the original
+ * hard-negative-only guard (Phase 8.3) after production logs showed
+ * obviously unrelated postings ("Remote Office Assistant", "Face
+ * Deduplication Collection") reaching Claude and only getting rejected
+ * afterward — see careerRelevanceFilter.ts's hasPositiveCareerSignal() for
+ * the new tier. Logs only jobTitle/company/reason — never a description,
+ * profile, resume, or Claude prompt content.
+ */
+function buildPreClaudeFilter(): (job: Job) => boolean {
+  return (job: Job): boolean => {
+    if (!isLocationEligible(job)) {
+      logPreClaudeRejection(job, "location not eligible (not Pakistan/UAE, and not remote)");
+      return false;
+    }
+    if (isHardNegativeRole(job)) {
+      logPreClaudeRejection(job, "hard negative title match (help desk/service desk/IT support/sysadmin/etc.)");
+      return false;
+    }
+    if (!hasPositiveCareerSignal(job)) {
+      logPreClaudeRejection(job, "insufficient positive QA/testing/automation/AI-quality signal");
+      return false;
+    }
+    return true;
+  };
+}
+
+function logPreClaudeRejection(job: Job, reason: string): void {
+  console.log(
+    JSON.stringify({
+      source: "career-agent",
+      stage: "pre_claude_filter",
+      event: "rejected",
+      jobTitle: job.jobTitle,
+      company: job.company,
+      reason
+    })
+  );
+}
+
 function toDiscoverMatchTopJob(ranked: RankedJob): DiscoverMatchTopJob {
   return {
     jobId: ranked.job.externalJobId ?? ranked.job.sourceUrl,
@@ -250,16 +295,9 @@ export function createCareerDiscoverMatchRouter(deps: CareerDiscoverMatchRouterD
           topCount: maxJobs,
           maxJobs,
           includeRankedJobs: true,
-          // Pre-Claude deterministic guards, composed (Phase 8.3 + 8.4):
-          // hard negative title filter (careerRelevanceFilter.ts — UNCHANGED)
-          // AND location eligibility (locationEligibilityFilter.ts — new in
-          // 8.4). Note the negation on isHardNegativeRole: analyzeJobs()'s
-          // preMatchFilter convention is "true = keep this job", while
-          // isHardNegativeRole's convention is "true = this IS a hard
-          // negative (reject it)" — inverted here at the call site rather
-          // than changing either function's own, independently-sensible
-          // naming.
-          preMatchFilter: (job) => !isHardNegativeRole(job) && isLocationEligible(job)
+          // Pre-Claude deterministic pipeline (Phase 8.3 + 8.4 + 8.3.3) — see
+          // buildPreClaudeFilter() above for the three ordered checks.
+          preMatchFilter: buildPreClaudeFilter()
         }
       );
 
@@ -315,13 +353,22 @@ export function createCareerDiscoverMatchRouter(deps: CareerDiscoverMatchRouterD
         }
       }
 
+      // Phase 8.3.3 — same underlying count, two field names (relevanceFiltered
+      // kept for backward compatibility; preMatchFiltered is the accurately-
+      // named field going forward, now that this covers three deterministic
+      // checks, not just the hard negative title filter).
+      const preMatchFiltered = discovery.relevanceFilteredCount ?? 0;
+      const jobsSentToMatching = discovery.jobsSentToMatching ?? 0;
+
       const result: DiscoverMatchResult = {
         status,
         jobsDiscovered: discovery.jobsFound,
         jobsAfterFiltering: discovery.jobsAfterFiltering,
         jobsMatched,
         matchingFailures,
-        relevanceFiltered: discovery.relevanceFilteredCount ?? 0,
+        relevanceFiltered: preMatchFiltered,
+        preMatchFiltered,
+        jobsSentToMatching,
         sources,
         topJobs: shortlisted.map(toDiscoverMatchTopJob)
       };

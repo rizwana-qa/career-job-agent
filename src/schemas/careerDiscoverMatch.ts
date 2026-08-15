@@ -71,8 +71,19 @@ export const DiscoverMatchResultSchema = z.object({
   /** Jobs Claude successfully evaluated (any recommendation, pre-gate) — NOT the shortlist count. See topJobs.length for how many actually qualified. */
   jobsMatched: z.number().int().min(0),
   matchingFailures: z.number().int().min(0),
-  /** Career Relevance Gate (Phase 8.3) — jobs whose TITLE was a hard negative (help desk/service desk/IT support/sysadmin/NOC/etc.) and were never sent to Claude at all. */
+  /**
+   * Jobs rejected before any Claude call — kept for backward compatibility.
+   * As of Phase 8.3.3 this counts THREE deterministic pre-Claude checks, not
+   * just the hard negative title filter: location ineligibility, hard
+   * negative title match, and insufficient positive career signal. Same
+   * underlying count as `preMatchFiltered` below (which is the new,
+   * accurately-named field going forward — both are populated together).
+   */
   relevanceFiltered: z.number().int().min(0),
+  /** Phase 8.3.3 — same count as `relevanceFiltered`, named to match the pipeline stage (location eligibility + hard negative title + positive career signal, combined) that rejected these jobs before any Claude call. */
+  preMatchFiltered: z.number().int().min(0),
+  /** Phase 8.3.3 — how many jobs actually reached Claude matching (post-maxJobs-cap, post-pre-Claude-filter). Makes the pipeline measurable end to end: jobsDiscovered -> jobsAfterFiltering -> preMatchFiltered -> jobsSentToMatching -> jobsMatched -> topJobs. */
+  jobsSentToMatching: z.number().int().min(0),
   /** Only jobs that passed the full Career Relevance Gate: careerRelevanceScore >= 70 AND matchScore >= 70 AND recommendation in {APPLY, CONSIDER}. A REJECT recommendation never appears here. */
   topJobs: z.array(DiscoverMatchTopJobSchema),
   /** Per-source discovery diagnostics (Phase 8.4 §12) — one source failing never fails the whole run; see SourceDiagnosticSchema. */

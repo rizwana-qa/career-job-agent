@@ -124,6 +124,8 @@ export interface AnalyzeJobsResult {
   rankedJobs?: RankedJob[];
   /** Only present when `preMatchFilter` was supplied — how many eligible jobs it excluded before any Claude call. */
   relevanceFilteredCount?: number;
+  /** Only present when `preMatchFilter` was supplied (Phase 8.3.3) — how many jobs actually reached Claude (post-maxJobs-cap, post-preMatchFilter). Makes the pipeline measurable end to end. */
+  jobsSentToMatching?: number;
 }
 
 /**
@@ -191,6 +193,7 @@ export async function analyzeJobs(rawJobs: unknown[], deps: AnalyzeJobsDependenc
   }
   if (deps.preMatchFilter) {
     result.relevanceFilteredCount = relevanceFilteredCount;
+    result.jobsSentToMatching = jobsToMatch.length;
   }
   if (claudeFailures.length > 0) {
     result.claudeFailures = claudeFailures;

@@ -135,6 +135,20 @@ export async function analyzeJobs(rawJobs: unknown[], deps: AnalyzeJobsDependenc
   // reports the true, uncapped deterministic-filter count.
   const jobsToMatch = deps.maxJobs !== undefined ? eligible.slice(0, deps.maxJobs) : eligible;
 
+  // TEMPORARY diagnostic — safe counts/booleans only, no job/profile content.
+  // Remove once the production "jobsMatched: 0, no outgoing requests" issue
+  // (Vercel deployment, 2026-08-15) is root-caused.
+  console.log(
+    JSON.stringify({
+      source: "career-agent-debug",
+      stage: "analyzeJobs",
+      jobsEligible: eligible.length,
+      maxJobsParam: deps.maxJobs,
+      jobsToMatchLength: jobsToMatch.length,
+      hasClaudeClient: Boolean(deps.claudeClient)
+    })
+  );
+
   if (jobsToMatch.length > 0 && !deps.claudeClient) {
     throw new ClaudeNotConfiguredError();
   }

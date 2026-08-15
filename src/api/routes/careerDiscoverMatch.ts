@@ -116,6 +116,35 @@ function passesCareerRelevanceGate(ranked: RankedJob): boolean {
   return true;
 }
 
+/**
+ * Phase 8.3.2 diagnostic — explains WHY a Claude-matched job was excluded
+ * from topJobs, without weakening the gate itself. Root cause of the
+ * original "jobsMatched > 0 but topJobs = []" report: careerRelevanceScore
+ * is `.optional()` on JobMatchSchema (deliberately, for backward
+ * compatibility — see jobMatch.ts), so a Claude response that omits it
+ * still passes schema validation and silently fails the gate exactly like a
+ * genuinely low score would, with no prior signal distinguishing the two.
+ * This never changes pass/fail — only what gets logged (title/company/
+ * scores/recommendation only, never job description or profile content) so
+ * a future empty-topJobs run can be diagnosed from server logs alone.
+ */
+function describeGateRejectionReasons(ranked: RankedJob): string[] {
+  const reasons: string[] = [];
+  const careerRelevanceScore = ranked.match.careerRelevanceScore;
+  if (careerRelevanceScore === undefined) {
+    reasons.push("careerRelevanceScore missing from Claude's response (schema allows this optionally)");
+  } else if (careerRelevanceScore < CAREER_RELEVANCE_SCORE_THRESHOLD) {
+    reasons.push(`careerRelevanceScore ${careerRelevanceScore} < ${CAREER_RELEVANCE_SCORE_THRESHOLD}`);
+  }
+  if (ranked.match.matchScore < MATCH_SCORE_THRESHOLD) {
+    reasons.push(`matchScore ${ranked.match.matchScore} < ${MATCH_SCORE_THRESHOLD}`);
+  }
+  if (!SHORTLIST_ELIGIBLE_RECOMMENDATIONS.has(ranked.match.recommendation)) {
+    reasons.push(`recommendation "${ranked.match.recommendation}" not in {APPLY, CONSIDER}`);
+  }
+  return reasons;
+}
+
 function toDiscoverMatchTopJob(ranked: RankedJob): DiscoverMatchTopJob {
   return {
     jobId: ranked.job.externalJobId ?? ranked.job.sourceUrl,
@@ -127,7 +156,7 @@ function toDiscoverMatchTopJob(ranked: RankedJob): DiscoverMatchTopJob {
     employmentType: ranked.job.employmentType,
     ...(ranked.job.salary !== undefined ? { salary: ranked.job.salary } : {}),
     ...(ranked.job.currency !== undefined ? { currency: ranked.job.currency } : {}),
-    postedAt: ranked.job.datePosted,
+    datePosted: ranked.job.datePosted,
     source: ranked.job.source,
     sourceUrl: ranked.job.sourceUrl,
     // Safe fallback for the type system only — every job reaching this
@@ -260,8 +289,31 @@ export function createCareerDiscoverMatchRouter(deps: CareerDiscoverMatchRouterD
       // Career Relevance Gate, part 2: careerRelevanceScore >= 70 AND
       // matchScore >= 70 AND recommendation in {APPLY, CONSIDER}. A REJECT
       // recommendation can never reach topJobs, regardless of scores.
-      const gatedJobs = (discovery.rankedJobs ?? []).filter(passesCareerRelevanceGate);
+      const rankedForGate = discovery.rankedJobs ?? [];
+      const gatedJobs = rankedForGate.filter(passesCareerRelevanceGate);
       const shortlisted = gatedJobs.slice(0, topJobs);
+
+      // Safe diagnostic only (Phase 8.3.2) — title/company/scores/
+      // recommendation, never job description or profile content. Lets a
+      // future "jobsMatched > 0 but topJobs = []" report be root-caused from
+      // server logs instead of re-derived blind.
+      for (const rejected of rankedForGate) {
+        if (!gatedJobs.includes(rejected)) {
+          console.log(
+            JSON.stringify({
+              source: "career-agent",
+              stage: "career_relevance_gate",
+              event: "rejected",
+              jobTitle: rejected.job.jobTitle,
+              company: rejected.job.company,
+              matchScore: rejected.match.matchScore,
+              careerRelevanceScore: rejected.match.careerRelevanceScore ?? null,
+              recommendation: rejected.match.recommendation,
+              reasons: describeGateRejectionReasons(rejected)
+            })
+          );
+        }
+      }
 
       const result: DiscoverMatchResult = {
         status,

@@ -158,7 +158,7 @@ describe("POST /career/discover-match — successful discovery", () => {
     expect(body.topJobs[0].country).toBe("Worldwide");
     expect(body.topJobs[0].remoteStatus).toBe("REMOTE");
     expect(body.topJobs[0].employmentType).toBe("FULL_TIME");
-    expect(body.topJobs[0].postedAt).toBe("2026-08-10");
+    expect(body.topJobs[0].datePosted).toBe("2026-08-10");
     expect(body.sources).toEqual([{ name: "fake-source", status: "OK", jobsFound: 1 }]);
   });
 });

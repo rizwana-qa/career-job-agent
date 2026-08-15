@@ -44,8 +44,8 @@ export const DiscoverMatchTopJobSchema = z.object({
   employmentType: EmploymentTypeSchema,
   salary: z.number().optional(),
   currency: z.string().optional(),
-  /** Mirrors Job.datePosted under the Phase 8.4 spec's requested field name. */
-  postedAt: z.string(),
+  /** Mirrors Job.datePosted directly (Phase 8.3.2 §3 — renamed from Phase 8.4's "postedAt" to match the underlying Job model's own field name exactly). */
+  datePosted: z.string(),
   source: z.string(),
   sourceUrl: z.string(),
   /** Career Relevance Gate (Phase 8.3) — how strongly this role belongs to the target career family. Every job in topJobs has already passed the >= 70 gate; see careerRelevanceFilter.ts. */

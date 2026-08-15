@@ -44,7 +44,7 @@ function validTopJob() {
     country: "Worldwide",
     remoteStatus: "REMOTE",
     employmentType: "FULL_TIME",
-    postedAt: "2026-08-10",
+    datePosted: "2026-08-10",
     source: "remotive",
     sourceUrl: "https://remotive.com/remote-jobs/qa/1",
     careerRelevanceScore: 90,

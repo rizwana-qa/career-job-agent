@@ -23,13 +23,19 @@ changes route behavior, authentication, or the pipeline itself.
 >    something fixable from this codebase.
 > 3. **Current state: back to `api/index.ts` + `vercel.json`** (approach
 >    1), because it's the older, far more battle-tested code path on
->    Vercel. The one thing that's different this time: we've now confirmed
->    the Vercel project's **Root Directory** setting is correctly `./`,
->    which was never actually verified during the original 404 — it's
->    possible that was a contributing factor the first time around, not a
->    problem with this approach itself. If this combination still fails
->    once Root Directory and Framework Preset (see below) are both
->    correct, that's new information worth capturing here.
+>    Vercel. Two things are different this time, both discovered only once
+>    the project's Git repository was actually properly connected (it
+>    wasn't, originally — see "Deployment requirements" below):
+>    - **Root Directory** is confirmed `./` (never actually verified
+>      during the original 404).
+>    - `vercel.json` now sets `"buildCommand": null`. With Framework Preset
+>      "Other", Vercel auto-detects `npm run build` (this project's local
+>      `tsc` build, which produces `dist/` for `node dist/index.js`) and
+>      runs it, then expects a static-site output directory (`public/` by
+>      default) to publish — which doesn't exist, because this project has
+>      no frontend. `"buildCommand": null` tells Vercel not to run that
+>      build step at all; `api/index.ts` is still compiled independently by
+>      Vercel's own Node.js Function builder regardless of this setting.
 
 ## Local development
 

@@ -14,7 +14,24 @@ import { formatZodIssues } from "../utils/zod.js";
 
 // Resume tailoring output is substantially larger than a job-match assessment
 // (a full resume plus requirement mappings), so it gets a larger output budget.
-const RESUME_TAILORING_MAX_OUTPUT_TOKENS = 4_000;
+// Raised 4_000 -> 16_000 (2026-08-15): on claude-sonnet-5, adaptive thinking
+// is ON BY DEFAULT and counts against max_tokens. Diagnostics showed thinking
+// alone consuming 3_463-3_888 of the 4_000 budget on every attempt, leaving
+// too little room for the actual JSON resume, so output was always truncated
+// (stop_reason: "max_tokens") -> "no text content block" or "not valid JSON".
+// Tried disabling thinking instead of raising the budget: that avoided
+// truncation but caused a WORSE, silent failure — the model produced
+// well-formed JSON that passed the initial size check but left "experience"
+// and "tailoredResume" (the two most labor-intensive fields) completely
+// empty, every time, with stop_reason "end_turn" (not a budget problem —
+// thinking is apparently required for this model to reliably complete a
+// large multi-field structured-output task). Re-enabled adaptive thinking
+// (see the `thinking` field below) and sized this budget for real observed
+// usage instead: a full response with thinking ran ~7_500 output tokens
+// (~1_350 thinking + ~6_150 text) on one job, with thinking alone reaching
+// ~3_900 on a larger prompt in earlier testing — 16_000 leaves comfortable
+// headroom for both. See docs/DEPLOYMENT.md.
+const RESUME_TAILORING_MAX_OUTPUT_TOKENS = 16_000;
 
 // Raised from 2 to 3 attempts, and 429 added to isRetryable() (2026-08-15):
 // production runs on Vercel showed transient failures — including a rate
@@ -87,9 +104,17 @@ export async function tailorResume(
         {
           model: CLAUDE_MODEL,
           max_tokens: RESUME_TAILORING_MAX_OUTPUT_TOKENS,
+          // Explicit (not just relying on the default) so this doesn't
+          // silently change if the SDK/model default ever shifts — thinking
+          // is required for this call to reliably complete every field (see
+          // the comment on RESUME_TAILORING_MAX_OUTPUT_TOKENS). `thinking`
+          // predates this SDK's (0.32.1) type definitions but is a real API
+          // field the client passes straight through to the request body, so
+          // the type assertion below is safe.
+          thinking: { type: "adaptive" },
           system: RESUME_TAILORING_SYSTEM_PROMPT,
           messages: [{ role: "user", content: userPrompt }]
-        },
+        } as Anthropic.MessageCreateParamsNonStreaming,
         { timeout: CLAUDE_REQUEST_TIMEOUT_MS }
       )) as unknown as ClaudeMessageLike;
 

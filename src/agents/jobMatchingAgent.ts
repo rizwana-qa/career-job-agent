@@ -81,9 +81,14 @@ export async function matchJobToProfile(
         {
           model: CLAUDE_MODEL,
           max_tokens: CLAUDE_MAX_OUTPUT_TOKENS,
+          // Explicit adaptive thinking — see resumeTailoringAgent.ts for why
+          // disabling it is unsafe for structured-output calls on this model.
+          // `thinking` predates this SDK's (0.32.1) types but is a real field
+          // the client passes straight through to the request body.
+          thinking: { type: "adaptive" },
           system: JOB_MATCHING_SYSTEM_PROMPT,
           messages: [{ role: "user", content: userPrompt }]
-        },
+        } as Anthropic.MessageCreateParamsNonStreaming,
         { timeout: CLAUDE_REQUEST_TIMEOUT_MS }
       )) as unknown as ClaudeMessageLike;
 

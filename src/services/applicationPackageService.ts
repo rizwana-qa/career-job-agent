@@ -24,12 +24,14 @@ import {
 } from "../utils/errors.js";
 import { formatZodIssues } from "../utils/zod.js";
 
-// Raised from 800 (2026-08-15): production runs showed "response was not
-// valid JSON" — the classic signature of output truncated mid-generation —
-// on this step specifically. The requested message itself is short
-// (~150 words), but 800 tokens leaves little margin if the model produces
-// any reasoning/preamble before the JSON. See docs/DEPLOYMENT.md.
-const APPLICATION_MESSAGE_MAX_OUTPUT_TOKENS = 2_000;
+// Raised 800 -> 2_000 -> 4_000 (2026-08-15): production runs showed "response
+// was not valid JSON" — the classic signature of output truncated
+// mid-generation — on this step specifically. The requested message itself
+// is short (~150 words), but claude-sonnet-5 runs adaptive thinking on by
+// default and thinking counts against max_tokens — see the comment on
+// RESUME_TAILORING_MAX_OUTPUT_TOKENS in resumeTailoringAgent.ts for the full
+// diagnosis. See docs/DEPLOYMENT.md.
+const APPLICATION_MESSAGE_MAX_OUTPUT_TOKENS = 4_000;
 // Raised from 2 to 3 attempts, and 429 added to isRetryable() (2026-08-15):
 // production runs on Vercel showed transient failures — including a rate
 // limit-shaped response and a response with no text content block — on an
@@ -106,26 +108,16 @@ async function generateApplicationMessage(
         {
           model: CLAUDE_MODEL,
           max_tokens: APPLICATION_MESSAGE_MAX_OUTPUT_TOKENS,
+          // Explicit adaptive thinking — see resumeTailoringAgent.ts for why
+          // disabling it is unsafe for structured-output calls on this model.
+          // `thinking` predates this SDK's (0.32.1) types but is a real field
+          // the client passes straight through to the request body.
+          thinking: { type: "adaptive" },
           system: APPLICATION_MESSAGE_SYSTEM_PROMPT,
           messages: [{ role: "user", content: userPrompt }]
-        },
+        } as Anthropic.MessageCreateParamsNonStreaming,
         { timeout: CLAUDE_REQUEST_TIMEOUT_MS }
       )) as unknown as ClaudeMessageLike;
-
-      // TEMPORARY diagnostic — safe shape info only (block types, stop
-      // reason, usage), never actual content. Remove once the production
-      // "no text content block, every attempt" issue (2026-08-15,
-      // application_package stage specifically) is root-caused.
-      console.log(
-        JSON.stringify({
-          source: "career-agent-debug",
-          stage: "generateApplicationMessage",
-          attempt,
-          contentBlockTypes: message.content?.map((b) => b.type),
-          stopReason: (message as unknown as { stop_reason?: unknown }).stop_reason,
-          usage: (message as unknown as { usage?: unknown }).usage
-        })
-      );
 
       const text = extractText(message);
       const parsed = parseJson(text);

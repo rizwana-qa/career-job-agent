@@ -13,8 +13,13 @@ import {
 import { formatZodIssues } from "../utils/zod.js";
 
 // Claim extraction + evidence reasoning across a full resume needs a larger
-// output budget than a single match assessment.
-const RESUME_EVIDENCE_MAX_OUTPUT_TOKENS = 4_000;
+// output budget than a single match assessment. Raised 4_000 -> 8_000
+// (2026-08-15): adaptive thinking is on by default on claude-sonnet-5 and
+// counts against max_tokens — see the comment on
+// RESUME_TAILORING_MAX_OUTPUT_TOKENS for the failure modes this avoids
+// (truncation at a too-small budget, or incomplete output if thinking is
+// disabled instead of budgeted for).
+const RESUME_EVIDENCE_MAX_OUTPUT_TOKENS = 8_000;
 
 // Raised from 2 to 3 attempts, and 429 added to isRetryable() (2026-08-15):
 // production runs on Vercel showed transient failures — including a rate
@@ -87,9 +92,14 @@ export async function verifyResumeEvidence(
         {
           model: CLAUDE_MODEL,
           max_tokens: RESUME_EVIDENCE_MAX_OUTPUT_TOKENS,
+          // Explicit adaptive thinking — see RESUME_TAILORING_MAX_OUTPUT_TOKENS
+          // for why disabling it is unsafe for large structured-output calls.
+          // `thinking` predates this SDK's (0.32.1) types but is a real field
+          // the client passes straight through to the request body.
+          thinking: { type: "adaptive" },
           system: RESUME_EVIDENCE_SYSTEM_PROMPT,
           messages: [{ role: "user", content: userPrompt }]
-        },
+        } as Anthropic.MessageCreateParamsNonStreaming,
         { timeout: CLAUDE_REQUEST_TIMEOUT_MS }
       )) as unknown as ClaudeMessageLike;
 

@@ -18,7 +18,12 @@ import { formatZodIssues } from "../utils/zod.js";
 // budget than a single match assessment or evidence-claim extraction.
 const RESUME_QA_MAX_OUTPUT_TOKENS = 4_500;
 
-const MAX_ATTEMPTS = 2;
+// Raised from 2 to 3 attempts, and 429 added to isRetryable() (2026-08-15):
+// production runs on Vercel showed transient failures — including a rate
+// limit-shaped response and a response with no text content block — on an
+// otherwise fresh/low-tier Anthropic account making several sequential
+// calls. See docs/DEPLOYMENT.md.
+const MAX_ATTEMPTS = 3;
 const RETRY_DELAY_MS = 500;
 
 interface ReviewTailoredResumeDependencies {
@@ -36,7 +41,7 @@ interface ClaudeMessageLike {
 
 function isRetryable(error: unknown): boolean {
   const status = (error as { status?: number } | undefined)?.status;
-  if (typeof status === "number" && status >= 500) {
+  if (typeof status === "number" && (status >= 500 || status === 429)) {
     return true;
   }
   const name = (error as { name?: string } | undefined)?.name ?? "";
@@ -104,7 +109,19 @@ export async function reviewTailoredResume(
 
       return result.data;
     } catch (error) {
-      if (error instanceof InvalidClaudeResponseError || error instanceof ClaudeResponseValidationError) {
+      // ClaudeResponseValidationError (well-formed JSON, wrong shape) stays
+      // non-retryable — a genuine prompt/model output problem. But an
+      // InvalidClaudeResponseError (non-JSON, or no text block at all) is
+      // now retried like a transient failure — see the MAX_ATTEMPTS comment
+      // above.
+      if (error instanceof ClaudeResponseValidationError) {
+        throw error;
+      }
+      if (error instanceof InvalidClaudeResponseError) {
+        if (attempt < MAX_ATTEMPTS) {
+          await delay(RETRY_DELAY_MS);
+          continue;
+        }
         throw error;
       }
 

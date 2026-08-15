@@ -60,13 +60,15 @@ describe("resumeTailoringAgent.tailorResume", () => {
     expect(client.messages.create).toHaveBeenCalledTimes(1);
   });
 
-  it("throws InvalidClaudeResponseError when the response is not valid JSON", async () => {
+  it("throws InvalidClaudeResponseError when the response is not valid JSON, retrying up to the attempt limit first", async () => {
     const client = mockClient(async () => textResponse("Here's your tailored resume: <not json>"));
 
     await expect(tailorResume(job(), careerProfile, masterResume, undefined, { client })).rejects.toBeInstanceOf(
       InvalidClaudeResponseError
     );
-    expect(client.messages.create).toHaveBeenCalledTimes(1);
+    // InvalidClaudeResponseError is now retried (2026-08-15): production
+    // evidence showed it can be transient, not just a structural problem.
+    expect(client.messages.create).toHaveBeenCalledTimes(3);
   });
 
   it("throws ClaudeResponseValidationError when JSON is valid but fails schema (empty tailoredResume)", async () => {
@@ -106,7 +108,7 @@ describe("resumeTailoringAgent.tailorResume", () => {
     await expect(tailorResume(job(), careerProfile, masterResume, undefined, { client })).rejects.toBeInstanceOf(
       ClaudeApiError
     );
-    expect(client.messages.create).toHaveBeenCalledTimes(2);
+    expect(client.messages.create).toHaveBeenCalledTimes(3);
   });
 
   it("does not retry a non-retryable error (401 auth failure)", async () => {

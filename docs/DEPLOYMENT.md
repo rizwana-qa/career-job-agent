@@ -224,6 +224,30 @@ Idempotency-Key: <a value unique to this trigger run>
   workflow itself — only the URL the existing HTTP Request node should
   point to.
 
+### Claude call reliability on Vercel (2026-08-15)
+
+Real production runs on Vercel surfaced transient Claude API failures that
+never showed up locally: a timeout, and separately a response with no text
+content block — both on an Anthropic account that had just had credits
+added and was making several sequential calls per run (job matching, then
+up to four more calls per top-ranked job: tailoring, Evidence Guard, QA,
+application message). Two changes across `src/services/claudeClient.ts`
+and all four Claude-calling agents plus `applicationPackageService.ts`:
+
+- `CLAUDE_REQUEST_TIMEOUT_MS` raised from 30s to 60s per attempt.
+- Each agent's retry logic now also retries on HTTP `429` (rate limit —
+  previously only `5xx` and timeout/connection errors were retried) and on
+  `InvalidClaudeResponseError` (non-JSON or no-text-block responses —
+  previously treated as a permanent structural problem and never retried;
+  production evidence showed it can be transient). `MAX_ATTEMPTS` raised
+  from 2 to 3 for extra headroom. `ClaudeResponseValidationError`
+  (well-formed JSON, wrong shape) is unchanged — still never retried, since
+  that's a genuine prompt/model-output problem, not a network one.
+
+None of this changes what gets sent to Claude or how a response is
+validated — only how aggressively a failed *attempt* is retried before
+giving up.
+
 ### Known limitation carried over from Phase 8
 
 The `Idempotency-Key` cache and the Remotive fetch throttle

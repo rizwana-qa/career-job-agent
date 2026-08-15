@@ -224,11 +224,14 @@ describe("applicationPackageService — 14 required scenarios", () => {
     expect(client.messages.create).toHaveBeenCalledTimes(1);
   });
 
-  it("10. invalid Claude response (non-JSON) -> InvalidClaudeResponseError", async () => {
+  it("10. invalid Claude response (non-JSON) -> InvalidClaudeResponseError, retrying up to the attempt limit first", async () => {
     const client = mockClient("Sure, here's a message for you: ...");
     await expect(generateApplicationPackage(baseInput(), { claudeClient: client })).rejects.toBeInstanceOf(
       InvalidClaudeResponseError
     );
+    // InvalidClaudeResponseError is now retried (2026-08-15): production
+    // evidence showed it can be transient, not just a structural problem.
+    expect(client.messages.create).toHaveBeenCalledTimes(3);
   });
 
   it("11. schema validation failure (empty applicationMessage) -> ClaudeResponseValidationError", async () => {
@@ -336,6 +339,21 @@ describe("applicationPackageService — Claude retry/error handling for the mess
     });
 
     await expect(generateApplicationPackage(baseInput(), { claudeClient: client })).rejects.toBeInstanceOf(ClaudeApiError);
+    expect(client.messages.create).toHaveBeenCalledTimes(3);
+  });
+
+  it("retries a 429 rate-limit response and succeeds on the second attempt", async () => {
+    let calls = 0;
+    const client = mockClient(() => {
+      calls += 1;
+      if (calls === 1) {
+        throw Object.assign(new Error("Too Many Requests"), { status: 429 });
+      }
+      return messageJson();
+    });
+
+    const result = await generateApplicationPackage(baseInput(), { claudeClient: client });
+    expect(result.status).toBe("READY_FOR_REVIEW");
     expect(client.messages.create).toHaveBeenCalledTimes(2);
   });
 

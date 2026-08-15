@@ -55,17 +55,35 @@ describe("jobMatchingAgent.matchJobToProfile", () => {
     expect(client.messages.create).toHaveBeenCalledTimes(1);
   });
 
-  it("throws InvalidClaudeResponseError when the response is not valid JSON", async () => {
+  it("throws InvalidClaudeResponseError when the response is not valid JSON, retrying up to the attempt limit first", async () => {
     const client = mockClient(async () => textResponse("Sure, here is my analysis: not JSON at all."));
 
     await expect(matchJobToProfile(job(), profile, { client })).rejects.toBeInstanceOf(InvalidClaudeResponseError);
-    expect(client.messages.create).toHaveBeenCalledTimes(1);
+    // InvalidClaudeResponseError is now retried (2026-08-15): production
+    // evidence showed it can be transient, not just a structural problem.
+    expect(client.messages.create).toHaveBeenCalledTimes(3);
   });
 
-  it("throws InvalidClaudeResponseError when there is no text content block", async () => {
+  it("throws InvalidClaudeResponseError when there is no text content block, retrying up to the attempt limit first", async () => {
     const client = mockClient(async () => ({ content: [{ type: "tool_use" }] }));
 
     await expect(matchJobToProfile(job(), profile, { client })).rejects.toBeInstanceOf(InvalidClaudeResponseError);
+    expect(client.messages.create).toHaveBeenCalledTimes(3);
+  });
+
+  it("succeeds if a retried InvalidClaudeResponseError is followed by a well-formed response", async () => {
+    let calls = 0;
+    const client = mockClient(async () => {
+      calls += 1;
+      if (calls === 1) {
+        return { content: [{ type: "tool_use" }] }; // no text block -> InvalidClaudeResponseError
+      }
+      return textResponse(validMatchJson());
+    });
+
+    const result = await matchJobToProfile(job(), profile, { client });
+    expect(result.matchScore).toBe(80);
+    expect(client.messages.create).toHaveBeenCalledTimes(2);
   });
 
   it("throws ClaudeResponseValidationError when JSON is valid but fails schema", async () => {
@@ -73,12 +91,6 @@ describe("jobMatchingAgent.matchJobToProfile", () => {
     const client = mockClient(async () => textResponse(badJson));
 
     await expect(matchJobToProfile(job(), profile, { client })).rejects.toBeInstanceOf(ClaudeResponseValidationError);
-    expect(client.messages.create).toHaveBeenCalledTimes(1);
-  });
-
-  it("does not retry on a structurally invalid response", async () => {
-    const client = mockClient(async () => textResponse("not json"));
-    await expect(matchJobToProfile(job(), profile, { client })).rejects.toThrow();
     expect(client.messages.create).toHaveBeenCalledTimes(1);
   });
 
@@ -99,6 +111,23 @@ describe("jobMatchingAgent.matchJobToProfile", () => {
     expect(client.messages.create).toHaveBeenCalledTimes(2);
   });
 
+  it("retries a 429 rate-limit response and succeeds on the second attempt", async () => {
+    let calls = 0;
+    const client = mockClient(async () => {
+      calls += 1;
+      if (calls === 1) {
+        const error = new Error("Too Many Requests") as Error & { status: number };
+        error.status = 429;
+        throw error;
+      }
+      return textResponse(validMatchJson());
+    });
+
+    const result = await matchJobToProfile(job(), profile, { client });
+    expect(result.matchScore).toBe(80);
+    expect(client.messages.create).toHaveBeenCalledTimes(2);
+  });
+
   it("gives up after the retry limit and throws ClaudeApiError", async () => {
     const client = mockClient(async () => {
       const error = new Error("Request Timeout") as Error & { name: string };
@@ -107,7 +136,7 @@ describe("jobMatchingAgent.matchJobToProfile", () => {
     });
 
     await expect(matchJobToProfile(job(), profile, { client })).rejects.toBeInstanceOf(ClaudeApiError);
-    expect(client.messages.create).toHaveBeenCalledTimes(2);
+    expect(client.messages.create).toHaveBeenCalledTimes(3);
   });
 
   it("does not retry a non-retryable error (e.g. 401 auth failure)", async () => {

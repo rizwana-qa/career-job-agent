@@ -68,6 +68,37 @@ export const DiscoverMatchTopJobSchema = z.object({
 });
 export type DiscoverMatchTopJob = z.infer<typeof DiscoverMatchTopJobSchema>;
 
+/** Per-source breakdown at the pre-Claude filter stage (Phase 8.5.17 §5). */
+export const PreMatchSourceBreakdownSchema = z.object({
+  afterBasicFilter: z.number().int().min(0),
+  qualified: z.number().int().min(0),
+  rejected: z.number().int().min(0)
+});
+
+/**
+ * Phase 8.5.17 — observability into the 52->2-style pre-Claude drop-off
+ * funnel: exactly one deterministic outcome per job that reached this
+ * stage, broken down by rejection reason, search tier, and source. Purely
+ * additive — never changes jobsDiscovered/jobsAfterFiltering/
+ * preMatchFiltered/jobsSentToMatching/jobsMatched's existing meanings, and
+ * never changes which jobs qualify or their order. See
+ * src/services/preMatchClassification.ts for why a true "RAW" (pre-basic-
+ * filter) tier stage isn't included here.
+ */
+export const PreMatchDiagnosticsSchema = z.object({
+  locationRejected: z.number().int().min(0),
+  hardNegativeRejected: z.number().int().min(0),
+  nonSoftwareQaRejected: z.number().int().min(0),
+  positiveCareerRejected: z.number().int().min(0),
+  qualifiedForMatching: z.number().int().min(0),
+  byTier: z.object({
+    afterBasicFilter: z.record(z.string(), z.number().int().min(0)),
+    qualifiedForMatching: z.record(z.string(), z.number().int().min(0))
+  }),
+  bySource: z.record(z.string(), PreMatchSourceBreakdownSchema)
+});
+export type PreMatchDiagnostics = z.infer<typeof PreMatchDiagnosticsSchema>;
+
 export const DiscoverMatchResultSchema = z.object({
   status: CareerRunStatusSchema,
   jobsDiscovered: z.number().int().min(0),
@@ -93,6 +124,8 @@ export const DiscoverMatchResultSchema = z.object({
   /** Per-source discovery diagnostics (Phase 8.4 §12) — one source failing never fails the whole run; see SourceDiagnosticSchema. */
   sources: z.array(SourceDiagnosticSchema),
   /** Phase 8.5.7 §10 — optional, safe tally of classifySearchTier() over the jobs Claude actually evaluated (before the Career Relevance Gate), keyed by tier name (e.g. "TIER_1"). Lets a caller see whether targeted search execution actually increased higher-tier representation in the matching budget, without exposing any job/profile content. */
-  searchResultsByTier: z.record(z.string(), z.number().int().min(0)).optional()
+  searchResultsByTier: z.record(z.string(), z.number().int().min(0)).optional(),
+  /** Phase 8.5.17 — optional pre-Claude funnel observability; see PreMatchDiagnosticsSchema. Omitted when no job ever reached the pre-Claude filter stage (e.g. all sources failed). */
+  preMatchDiagnostics: PreMatchDiagnosticsSchema.optional()
 });
 export type DiscoverMatchResult = z.infer<typeof DiscoverMatchResultSchema>;

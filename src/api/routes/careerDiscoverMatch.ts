@@ -21,16 +21,18 @@ import {
 import type { CareerRunStatus } from "../../schemas/careerRun.js";
 import { InMemoryIdempotencyStore, type IdempotencyStore } from "../../services/careerOrchestrationService.js";
 import {
-  isHardNegativeRole,
-  hasPositiveCareerSignal,
-  isNonSoftwareQaRole,
   CAREER_RELEVANCE_SCORE_THRESHOLD,
   MATCH_SCORE_THRESHOLD,
   SHORTLIST_ELIGIBLE_RECOMMENDATIONS
 } from "../../services/careerRelevanceFilter.js";
-import { isLocationEligible } from "../../services/locationEligibilityFilter.js";
 import { calculateStrategicRankingScore } from "../../ranking/strategicRanking.js";
 import { classifySearchTier } from "../../services/searchTierClassifier.js";
+import {
+  classifyPreMatchOutcome,
+  buildPreMatchDiagnostics,
+  logPreMatchOutcome,
+  logPreMatchDiagnosticsSummary
+} from "../../services/preMatchClassification.js";
 import { buildTierPrioritizedRoleKeywords } from "../../jobSources/searchConcepts.js";
 import { ClaudeNotConfiguredError, InvalidDiscoveryInputError, JobSourceError, toSafeErrorMessage } from "../../utils/errors.js";
 import { formatZodIssues } from "../../utils/zod.js";
@@ -152,47 +154,26 @@ function describeGateRejectionReasons(ranked: RankedJob): string[] {
 }
 
 /**
- * Pre-Claude deterministic pipeline (Phase 8.3.3, extended by Phase 8.5 §6-8):
- * Location eligibility -> Hard negative title filter -> Non-software-QA
- * filter -> Positive career relevance prefilter, checked in that order so
- * the logged rejection reason always reflects the FIRST stage that actually
- * rejected a job. isHardNegativeRole()/hasPositiveCareerSignal() themselves
- * are unmodified (Phase 8.5 §7) — isNonSoftwareQaRole() is a new, separate
- * check composed in here alongside them, not a change to either.
+ * Pre-Claude deterministic pipeline (Phase 8.3.3, extended by Phase 8.5 §6-8,
+ * Phase 8.5.17 §1-3 for observability): Location eligibility -> Hard
+ * negative title filter -> Non-software-QA filter -> Positive career
+ * relevance prefilter, checked in that order so the logged outcome always
+ * reflects the FIRST stage that actually rejected a job. The actual 4-stage
+ * order/logic lives in preMatchClassification.ts's classifyPreMatchOutcome()
+ * (single source of truth) — this closure derives its boolean return from
+ * that same classification, so filtering BEHAVIOR is byte-for-byte
+ * unchanged; it additionally collects every job it's called on into
+ * `collector` (in call order, i.e. exactly the "after basic filter" set)
+ * so the route can compute run-level diagnostics after discoverJobs()
+ * resolves, and logs a safe per-job outcome line via logPreMatchOutcome().
  */
-function buildPreClaudeFilter(): (job: Job) => boolean {
+function buildPreClaudeFilter(collector: Job[]): (job: Job) => boolean {
   return (job: Job): boolean => {
-    if (!isLocationEligible(job)) {
-      logPreClaudeRejection(job, "location not eligible (not Pakistan/UAE, and not remote-eligible)");
-      return false;
-    }
-    if (isHardNegativeRole(job)) {
-      logPreClaudeRejection(job, "hard negative title match (help desk/service desk/IT support/sysadmin/etc.)");
-      return false;
-    }
-    if (isNonSoftwareQaRole(job)) {
-      logPreClaudeRejection(job, "non-software-QA role (food/manufacturing/construction/pharma QC, BPO quality analyst, AI data labeling, etc.)");
-      return false;
-    }
-    if (!hasPositiveCareerSignal(job)) {
-      logPreClaudeRejection(job, "insufficient positive QA/testing/automation/AI-quality signal");
-      return false;
-    }
-    return true;
+    collector.push(job);
+    const outcome = classifyPreMatchOutcome(job);
+    logPreMatchOutcome(job, outcome);
+    return outcome === "QUALIFIED_FOR_MATCHING";
   };
-}
-
-function logPreClaudeRejection(job: Job, reason: string): void {
-  console.log(
-    JSON.stringify({
-      source: "career-agent",
-      stage: "pre_claude_filter",
-      event: "rejected",
-      jobTitle: job.jobTitle,
-      company: job.company,
-      reason
-    })
-  );
 }
 
 function toDiscoverMatchTopJob(ranked: RankedJob, rankingReason: string, searchTier: string): DiscoverMatchTopJob {
@@ -280,6 +261,10 @@ export function createCareerDiscoverMatchRouter(deps: CareerDiscoverMatchRouterD
 
     try {
       const jobSources = resolveJobSources(deps);
+      // Phase 8.5.17 — collects every job that reaches the pre-Claude filter
+      // stage (in call order), so preMatchDiagnostics can be computed after
+      // discoverJobs() resolves without changing selection/ordering/capping.
+      const preMatchCollector: Job[] = [];
       const discovery = await discoverJobs(
         // Phase 8.5.6 §4/§14: explicit, tier-prioritized (Tier 1 -> Tier 2 ->
         // Tier 4 -> Tier 3) role-keyword list, scoped to this endpoint's own
@@ -318,8 +303,8 @@ export function createCareerDiscoverMatchRouter(deps: CareerDiscoverMatchRouterD
           maxJobs,
           includeRankedJobs: true,
           // Pre-Claude deterministic pipeline (Phase 8.3 + 8.4 + 8.3.3) — see
-          // buildPreClaudeFilter() above for the three ordered checks.
-          preMatchFilter: buildPreClaudeFilter()
+          // buildPreClaudeFilter() above for the four ordered checks.
+          preMatchFilter: buildPreClaudeFilter(preMatchCollector)
         }
       );
 
@@ -406,6 +391,18 @@ export function createCareerDiscoverMatchRouter(deps: CareerDiscoverMatchRouterD
         searchResultsByTier[tier] = (searchResultsByTier[tier] ?? 0) + 1;
       }
 
+      // Phase 8.5.17 — run-level pre-Claude funnel observability, computed
+      // from the exact set of jobs the pre-Claude filter classified (see
+      // preMatchCollector above). One aggregate summary log per run (§7);
+      // per-job outcomes were already logged individually by
+      // logPreMatchOutcome() inside buildPreClaudeFilter() as each job was
+      // classified. Purely additive — never changes which jobs qualify,
+      // their order, or the maxJobs cap.
+      const preMatchDiagnostics = buildPreMatchDiagnostics(preMatchCollector);
+      if (preMatchCollector.length > 0) {
+        logPreMatchDiagnosticsSummary(preMatchDiagnostics);
+      }
+
       const result: DiscoverMatchResult = {
         status,
         jobsDiscovered: discovery.jobsFound,
@@ -417,7 +414,8 @@ export function createCareerDiscoverMatchRouter(deps: CareerDiscoverMatchRouterD
         jobsSentToMatching,
         sources,
         topJobs: shortlisted.map(({ ranked, strategic }) => toDiscoverMatchTopJob(ranked, strategic.reason, classifySearchTier(ranked.job))),
-        ...(Object.keys(searchResultsByTier).length > 0 ? { searchResultsByTier } : {})
+        ...(Object.keys(searchResultsByTier).length > 0 ? { searchResultsByTier } : {}),
+        ...(preMatchCollector.length > 0 ? { preMatchDiagnostics } : {})
       };
 
       if (idempotencyKey) {

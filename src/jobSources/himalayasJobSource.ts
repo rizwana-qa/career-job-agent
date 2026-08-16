@@ -17,26 +17,31 @@ const REQUEST_TIMEOUT_MS = 10_000;
 const HIMALAYAS_RESULT_LIMIT = 20;
 
 /**
- * Targeted multi-query search execution (Phase 8.5.7 §2-3). Himalayas is a
- * keyword-search endpoint (unlike Remote OK's single unfiltered feed — see
- * remoteOkJobSource.ts, deliberately untouched by this phase), so instead of
- * one broad request per discovery run, searchJobs() below issues a small,
- * bounded set of targeted queries: strongest tiers first (Tier 1 -> Tier 2 ->
- * Tier 4 -> Tier 3, matching searchTierClassifier.ts's own priority order),
- * each paired with a rotating location modifier (Pakistan / UAE / no
- * modifier, the last standing in for "Remote/Worldwide" — Himalayas is
- * exclusively a remote-jobs board, so every result is already remote; the
- * modifier narrows toward listings that specifically call out Pakistan/UAE
- * eligibility). This is a controlled, small set of (role, location) PAIRS —
- * never a full cartesian product of every role phrase times every location
- * times every work mode (explicitly disallowed by §3).
+ * Targeted multi-query search execution (Phase 8.5.7 §2-3, query text fixed
+ * by Phase 8.5.12). Himalayas is a keyword-search endpoint (unlike Remote
+ * OK's single unfiltered feed — see remoteOkJobSource.ts, deliberately
+ * untouched by this phase), so instead of one broad request per discovery
+ * run, searchJobs() below issues a small, bounded set of targeted queries:
+ * strongest tiers first (Tier 1 -> Tier 2 -> Tier 4 -> Tier 3, matching
+ * searchTierClassifier.ts's own priority order).
+ *
+ * Phase 8.5.7 originally appended a rotating location word (Pakistan/UAE)
+ * to the free-text `q` value. Phase 8.5.11's one-time authorized live
+ * diagnostic disproved that this narrowed anything: the same postings
+ * recurred across differently-location-tagged queries (and undifferentiated
+ * ones), and the adapter's own cross-query dedup removed ~21% of raw
+ * results as exact repeats — evidence the API's `q` param does not perform
+ * location-aware AND-matching the way the concatenation assumed. Phase
+ * 8.5.12 removes the location word entirely: queries are role-phrase-only
+ * text. Location eligibility is, and always was, enforced downstream by
+ * locationEligibilityFilter.ts against the job's actual normalized
+ * location/country/remoteStatus metadata — never by the search query text.
  */
 export type HimalayasSearchTier = "TIER_1" | "TIER_2" | "TIER_3" | "TIER_4";
 
 export interface HimalayasSearchQuerySpec {
   tier: HimalayasSearchTier;
   roleKeyword: string;
-  locationModifier?: string;
   query: string;
 }
 
@@ -50,9 +55,6 @@ const TIER_QUERY_ALLOCATION: Record<HimalayasSearchTier, number> = {
   TIER_4: 2,
   TIER_3: 1
 };
-
-/** Rotates across selected role queries — `undefined` stands for no location suffix (broadest reach; Himalayas is remote-only regardless). Deliberately small (Phase 8.5.7 §3: "not a huge Cartesian product"). */
-const QUERY_LOCATION_ROTATION: readonly (string | undefined)[] = ["Pakistan", "UAE", undefined];
 
 const TIER_QUERY_SOURCES: ReadonlyArray<{ tier: HimalayasSearchTier; concepts: readonly string[] }> = [
   { tier: "TIER_1", concepts: TIER_1_SEARCH_CONCEPTS },
@@ -68,20 +70,17 @@ const TIER_QUERY_SOURCES: ReadonlyArray<{ tier: HimalayasSearchTier; concepts: r
  * route-level `buildTierPrioritizedRoleKeywords()` (still used by other
  * sources' single-keyword call sites), Himalayas now owns its own query
  * construction end to end, since it alone can act on more than one keyword
- * per discovery run.
+ * per discovery run. As of Phase 8.5.12, `query` is always exactly the role
+ * phrase — no location word is ever appended (see doc comment above).
  */
 export function buildHimalayasSearchQueryPlan(maxQueries: number = MAX_SEARCH_QUERIES_PER_SOURCE): HimalayasSearchQuerySpec[] {
   const plan: HimalayasSearchQuerySpec[] = [];
-  let locationCursor = 0;
 
   for (const { tier, concepts } of TIER_QUERY_SOURCES) {
     const allocation = Math.min(TIER_QUERY_ALLOCATION[tier], concepts.length);
     for (let i = 0; i < allocation && plan.length < maxQueries; i++) {
       const roleKeyword = concepts[i];
-      const locationModifier = QUERY_LOCATION_ROTATION[locationCursor % QUERY_LOCATION_ROTATION.length];
-      locationCursor++;
-      const query = locationModifier ? `${roleKeyword} ${locationModifier}` : roleKeyword;
-      plan.push({ tier, roleKeyword, locationModifier, query });
+      plan.push({ tier, roleKeyword, query: roleKeyword });
     }
     if (plan.length >= maxQueries) {
       break;

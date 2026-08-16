@@ -93,4 +93,13 @@ describe("classifyRemoteEligibility", () => {
     expect(isLocationEligible(job({ location: "EMEA Remote", country: "EMEA" }))).toBe(true);
     expect(isLocationEligible(job({ location: "Remote - Europe", country: "Germany" }))).toBe(true);
   });
+
+  /** Phase 8.5.12 §7 cases I/J — location eligibility is driven by actual normalized job metadata, never by search query text. */
+  it("[I] a Pakistan-eligible REMOTE job (real location/country metadata) survives isLocationEligible", () => {
+    expect(isLocationEligible(job({ remoteStatus: "REMOTE", location: "Remote - Pakistan", country: "Pakistan" }))).toBe(true);
+  });
+
+  it("[J] a US-only REMOTE job is still rejected by isLocationEligible", () => {
+    expect(isLocationEligible(job({ remoteStatus: "REMOTE", location: "Remote (US only)", country: "United States" }))).toBe(false);
+  });
 });

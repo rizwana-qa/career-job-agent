@@ -136,17 +136,79 @@ describe("buildHimalayasSearchQueryPlan (Phase 8.5.7 §2/§3/§6)", () => {
     expect(plan.every((spec) => spec.tier === "TIER_1")).toBe(true);
   });
 
-  it("pairs each role phrase with a controlled location modifier (Pakistan/UAE/none) — not a full cartesian product of roles x locations x modes", () => {
+  it("every query is exactly the role phrase, with no appended text of any kind", () => {
     const plan = buildHimalayasSearchQueryPlan();
     for (const spec of plan) {
-      expect(spec.query.startsWith(spec.roleKeyword)).toBe(true);
-      if (spec.locationModifier) {
-        expect(["Pakistan", "UAE"]).toContain(spec.locationModifier);
-        expect(spec.query).toBe(`${spec.roleKeyword} ${spec.locationModifier}`);
-      } else {
-        expect(spec.query).toBe(spec.roleKeyword);
+      expect(spec.query).toBe(spec.roleKeyword);
+    }
+  });
+});
+
+/**
+ * Phase 8.5.12 §7 — regression cases A-G. The Phase 8.5.11 live diagnostic
+ * showed appending Pakistan/UAE to the free-text `q` value did not
+ * meaningfully narrow results (the same postings recurred across
+ * differently-tagged queries, and ~21% of raw results were exact
+ * cross-query duplicates) — so queries are now role-phrase-only text.
+ * Cases H-K (location eligibility still runs downstream, a Pakistan-eligible
+ * remote job survives, a US-only remote job is still rejected, cross-query
+ * dedup remains intact) are covered by locationEligibilityFilter.test.ts
+ * (unchanged) and the "de-duplicates the same raw job id" test above
+ * (unchanged) — this file's own adapter/query-plan surface is what §7
+ * actually asks to add tests for here.
+ */
+describe("Himalayas query text — Phase 8.5.12 §7 regression cases A-G", () => {
+  const FORBIDDEN_LOCATION_WORDS = ["Pakistan", "UAE", "Dubai", "Abu Dhabi", "Worldwide", "Asia", "APAC"];
+
+  it("[A] the Tier 1 queries contain the role phrase only", () => {
+    const tier1Queries = buildHimalayasSearchQueryPlan()
+      .filter((spec) => spec.tier === "TIER_1")
+      .map((spec) => spec.query);
+    expect(tier1Queries).toEqual(["Principal Software Quality Engineer", "Principal QA Engineer", "Principal SDET"]);
+  });
+
+  it("[B] the Tier 2 queries contain the role phrase only", () => {
+    const tier2Queries = buildHimalayasSearchQueryPlan()
+      .filter((spec) => spec.tier === "TIER_2")
+      .map((spec) => spec.query);
+    expect(tier2Queries).toEqual(["Lead QA Engineer", "Quality Engineering Lead"]);
+  });
+
+  it("[C] the Tier 4 queries contain the role phrase only", () => {
+    const tier4Queries = buildHimalayasSearchQueryPlan()
+      .filter((spec) => spec.tier === "TIER_4")
+      .map((spec) => spec.query);
+    expect(tier4Queries).toEqual(["AI Quality Engineer", "AI QA Engineer"]);
+  });
+
+  it("[D] the Tier 3 query contains the role phrase only", () => {
+    const tier3Queries = buildHimalayasSearchQueryPlan()
+      .filter((spec) => spec.tier === "TIER_3")
+      .map((spec) => spec.query);
+    expect(tier3Queries).toEqual(["Senior QA Engineer"]);
+  });
+
+  it("[E] no query contains an appended location word", () => {
+    const plan = buildHimalayasSearchQueryPlan();
+    for (const spec of plan) {
+      for (const word of FORBIDDEN_LOCATION_WORDS) {
+        expect(spec.query.toLowerCase().includes(word.toLowerCase())).toBe(false);
       }
     }
+  });
+
+  it("[F] the query plan never exceeds 8 queries", () => {
+    expect(buildHimalayasSearchQueryPlan().length).toBeLessThanOrEqual(8);
+    expect(buildHimalayasSearchQueryPlan()).toHaveLength(8);
+  });
+
+  it("[G] tier allocation remains TIER_1=3, TIER_2=2, TIER_4=2, TIER_3=1", () => {
+    const plan = buildHimalayasSearchQueryPlan();
+    const counts = plan.reduce<Record<string, number>>((acc, spec) => {
+      acc[spec.tier] = (acc[spec.tier] ?? 0) + 1;
+      return acc;
+    }, {});
+    expect(counts).toEqual({ TIER_1: 3, TIER_2: 2, TIER_4: 2, TIER_3: 1 });
   });
 });
 

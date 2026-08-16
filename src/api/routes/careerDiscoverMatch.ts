@@ -29,6 +29,7 @@ import {
   SHORTLIST_ELIGIBLE_RECOMMENDATIONS
 } from "../../services/careerRelevanceFilter.js";
 import { isLocationEligible } from "../../services/locationEligibilityFilter.js";
+import { calculateStrategicRankingScore } from "../../ranking/strategicRanking.js";
 import { ClaudeNotConfiguredError, InvalidDiscoveryInputError, JobSourceError, toSafeErrorMessage } from "../../utils/errors.js";
 import { formatZodIssues } from "../../utils/zod.js";
 import { authenticateCareerAgentRequest } from "./careerAuth.js";
@@ -192,7 +193,7 @@ function logPreClaudeRejection(job: Job, reason: string): void {
   );
 }
 
-function toDiscoverMatchTopJob(ranked: RankedJob): DiscoverMatchTopJob {
+function toDiscoverMatchTopJob(ranked: RankedJob, rankingReason: string): DiscoverMatchTopJob {
   return {
     jobId: ranked.job.externalJobId ?? ranked.job.sourceUrl,
     jobTitle: ranked.job.jobTitle,
@@ -216,6 +217,7 @@ function toDiscoverMatchTopJob(ranked: RankedJob): DiscoverMatchTopJob {
     futureAIValue: ranked.match.futureAIValue,
     recommendation: ranked.match.recommendation,
     whySelected: ranked.match.whySelected ?? ranked.match.reason,
+    rankingReason,
     jobData: { job: ranked.job, match: ranked.match }
   };
 }
@@ -332,10 +334,23 @@ export function createCareerDiscoverMatchRouter(deps: CareerDiscoverMatchRouterD
 
       // Career Relevance Gate, part 2: careerRelevanceScore >= 70 AND
       // matchScore >= 70 AND recommendation in {APPLY, CONSIDER}. A REJECT
-      // recommendation can never reach topJobs, regardless of scores.
+      // recommendation can never reach topJobs, regardless of scores. This
+      // gate itself is unchanged (Phase 8.5.5 §8/§17) — nothing here alters
+      // which jobs qualify, only the ORDER among jobs that already do.
       const rankedForGate = discovery.rankedJobs ?? [];
       const gatedJobs = rankedForGate.filter(passesCareerRelevanceGate);
-      const shortlisted = gatedJobs.slice(0, topJobs);
+
+      // Strategic shortlist ranking (Phase 8.5.5) — re-ranks the already-
+      // gated, already-qualified set by career relevance, match score,
+      // seniority/scope, interview potential, career growth, AI value,
+      // location eligibility, and freshness, so e.g. a Principal/Staff/Lead/
+      // Architect or high-scope Senior role outranks a technically-
+      // qualified but manual-execution-heavy Senior role with a comparable
+      // matchScore. See src/ranking/strategicRanking.ts.
+      const strategicallyRanked = gatedJobs
+        .map((ranked) => ({ ranked, strategic: calculateStrategicRankingScore(ranked) }))
+        .sort((a, b) => b.strategic.score - a.strategic.score);
+      const shortlisted = strategicallyRanked.slice(0, topJobs);
 
       // Safe diagnostic only (Phase 8.3.2) — title/company/scores/
       // recommendation, never job description or profile content. Lets a
@@ -376,7 +391,7 @@ export function createCareerDiscoverMatchRouter(deps: CareerDiscoverMatchRouterD
         preMatchFiltered,
         jobsSentToMatching,
         sources,
-        topJobs: shortlisted.map(toDiscoverMatchTopJob)
+        topJobs: shortlisted.map(({ ranked, strategic }) => toDiscoverMatchTopJob(ranked, strategic.reason))
       };
 
       if (idempotencyKey) {

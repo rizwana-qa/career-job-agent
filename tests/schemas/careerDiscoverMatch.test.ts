@@ -54,6 +54,7 @@ function validTopJob() {
     futureAIValue: 75,
     recommendation: "APPLY",
     whySelected: "Strong alignment with QA automation and quality engineering.",
+    rankingReason: "Strong AI Quality Engineer role with high automation ownership.",
     jobData: { job: validJob(), match: validMatch() }
   };
 }

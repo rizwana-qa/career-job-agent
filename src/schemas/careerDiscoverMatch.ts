@@ -57,6 +57,8 @@ export const DiscoverMatchTopJobSchema = z.object({
   recommendation: z.string(),
   /** Short, safe rationale — never full job description or profile content. */
   whySelected: z.string(),
+  /** Phase 8.5.5 — deterministic, Claude-free explanation of this job's position in the final shortlist (seniority/scope, career growth, AI relevance) — distinct from whySelected, which is Claude's own career-fit rationale. Never exposes prompt content. */
+  rankingReason: z.string(),
   jobData: z.object({
     job: JobSchema,
     match: JobMatchSchema

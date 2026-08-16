@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { isLocationEligible } from "../../src/services/locationEligibilityFilter.js";
+import { isLocationEligible, classifyRemoteEligibility } from "../../src/services/locationEligibilityFilter.js";
 import { JobSchema, type Job } from "../../src/schemas/job.js";
 
 function job(overrides: Record<string, unknown> = {}): Job {
@@ -54,5 +54,43 @@ describe("isLocationEligible", () => {
 
   it("rejects a HYBRID job outside Pakistan/UAE", () => {
     expect(isLocationEligible(job({ remoteStatus: "HYBRID", location: "Berlin", country: "Germany" }))).toBe(false);
+  });
+});
+
+/** 3-tier remote classification (Phase 8.5 §6). */
+describe("classifyRemoteEligibility", () => {
+  it("classifies Worldwide/Global/Anywhere as REMOTE_PK_ELIGIBLE", () => {
+    expect(classifyRemoteEligibility(job({ location: "Worldwide", country: "Worldwide" }))).toBe("REMOTE_PK_ELIGIBLE");
+    expect(classifyRemoteEligibility(job({ location: "Remote - Global", country: "Global" }))).toBe("REMOTE_PK_ELIGIBLE");
+  });
+
+  it("classifies Pakistan/Asia/APAC/Middle East as REMOTE_PK_ELIGIBLE", () => {
+    expect(classifyRemoteEligibility(job({ location: "Remote - Pakistan", country: "Pakistan" }))).toBe("REMOTE_PK_ELIGIBLE");
+    expect(classifyRemoteEligibility(job({ location: "Remote - Asia", country: "Asia" }))).toBe("REMOTE_PK_ELIGIBLE");
+    expect(classifyRemoteEligibility(job({ location: "APAC Remote", country: "APAC" }))).toBe("REMOTE_PK_ELIGIBLE");
+    expect(classifyRemoteEligibility(job({ location: "Middle East Remote", country: "Middle East" }))).toBe("REMOTE_PK_ELIGIBLE");
+  });
+
+  it("classifies US-only/Canada-only/EU-only/US-work-authorization listings as REMOTE_EXCLUDED", () => {
+    expect(classifyRemoteEligibility(job({ location: "Remote (US only)", country: "United States" }))).toBe("REMOTE_EXCLUDED");
+    expect(classifyRemoteEligibility(job({ location: "Remote - Canada only", country: "Canada" }))).toBe("REMOTE_EXCLUDED");
+    expect(classifyRemoteEligibility(job({ location: "Remote (EU only)", country: "Germany" }))).toBe("REMOTE_EXCLUDED");
+    expect(classifyRemoteEligibility(job({ location: "Remote — US work authorization required", country: "United States" }))).toBe(
+      "REMOTE_EXCLUDED"
+    );
+  });
+
+  it("classifies a bare EMEA listing as REMOTE_UNCLEAR — not automatically Pakistan-eligible", () => {
+    expect(classifyRemoteEligibility(job({ location: "EMEA Remote", country: "EMEA" }))).toBe("REMOTE_UNCLEAR");
+  });
+
+  it("classifies an unlabeled country like plain 'Germany' as REMOTE_UNCLEAR, not excluded", () => {
+    expect(classifyRemoteEligibility(job({ location: "Remote - Europe", country: "Germany" }))).toBe("REMOTE_UNCLEAR");
+  });
+
+  it("isLocationEligible only rejects REMOTE_EXCLUDED — REMOTE_UNCLEAR still passes", () => {
+    expect(isLocationEligible(job({ location: "Remote (US only)", country: "United States" }))).toBe(false);
+    expect(isLocationEligible(job({ location: "EMEA Remote", country: "EMEA" }))).toBe(true);
+    expect(isLocationEligible(job({ location: "Remote - Europe", country: "Germany" }))).toBe(true);
   });
 });

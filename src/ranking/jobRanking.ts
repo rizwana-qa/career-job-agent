@@ -16,12 +16,23 @@ const WEIGHTS = {
   interviewPotential: 0.3,
   careerGrowth: 0.15,
   futureAIValue: 0.1,
-  salaryPotential: 0.1
+  salaryPotential: 0.1,
+  /**
+   * Only ever active when RankingOptions.applyFreshnessBonus is explicitly
+   * true (Phase 8.5 §10) — deliberately a minor weight, since freshness is a
+   * tiebreaker, not a primary signal: "a strong Principal QA role should
+   * beat a fresh weak job" (§10). Every existing caller (POST /career/run,
+   * POST /jobs/analyze) never sets this option, so their weightsUsed/
+   * careerScore output is byte-for-byte unchanged by this addition.
+   */
+  freshness: 0.05
 } as const;
 
 export interface RankingOptions {
   /** Caller-supplied benchmark used only to score disclosed salaries. Never defaulted or invented. */
   referenceSalary?: number;
+  /** Phase 8.5 §10 — opt-in only; undefined/false preserves pre-8.5 ranking exactly. */
+  applyFreshnessBonus?: boolean;
 }
 
 export interface ScoreBreakdown {
@@ -31,7 +42,31 @@ export interface ScoreBreakdown {
   futureAIValue: number;
   salaryPotential: number | null;
   salaryDataAvailable: boolean;
+  /** Field name matches the WEIGHTS key exactly ("freshness", not "freshnessScore") — weightedScore() below looks breakdown fields up by weight key name, the same convention salaryPotential already follows. */
+  freshness: number | null;
+  freshnessDataAvailable: boolean;
   weightsUsed: Partial<Record<keyof typeof WEIGHTS, number>>;
+}
+
+/**
+ * Freshness priority buckets (Phase 8.5 §10) — a ranking tiebreaker, never a
+ * rejection criterion ("do not reject older jobs solely because of age").
+ * Returns null (never a guessed score) when datePosted can't be parsed.
+ */
+export function computeFreshnessScore(job: Job): number | null {
+  const posted = new Date(job.datePosted).getTime();
+  if (!Number.isFinite(posted)) {
+    return null;
+  }
+  const ageHours = (Date.now() - posted) / (1000 * 60 * 60);
+  if (ageHours < 0) {
+    return null; // future-dated — nothing sensible to compute, not guessed.
+  }
+  if (ageHours <= 24) return 100;
+  if (ageHours <= 72) return 85;
+  if (ageHours <= 24 * 7) return 65;
+  if (ageHours <= 24 * 14) return 40;
+  return 25; // older than 14 days — low, but never zero, per §10's "exceptional exact fit" allowance.
 }
 
 export interface RankedJob {
@@ -53,6 +88,8 @@ function computeSalaryPotential(job: Job, options: RankingOptions): number | nul
 export function calculateCareerScore(job: Job, match: JobMatch, options: RankingOptions = {}): ScoreBreakdown {
   const salaryPotential = computeSalaryPotential(job, options);
   const salaryDataAvailable = salaryPotential !== null;
+  const freshness = options.applyFreshnessBonus ? computeFreshnessScore(job) : null;
+  const freshnessDataAvailable = freshness !== null;
 
   const components: Record<string, number> = {
     matchScore: match.matchScore,
@@ -71,6 +108,10 @@ export function calculateCareerScore(job: Job, match: JobMatch, options: Ranking
     components.salaryPotential = salaryPotential as number;
     activeWeights.salaryPotential = WEIGHTS.salaryPotential;
   }
+  if (freshnessDataAvailable) {
+    components.freshness = freshness as number;
+    activeWeights.freshness = WEIGHTS.freshness;
+  }
 
   const weightSum = Object.values(activeWeights).reduce((sum, w) => sum + w, 0);
 
@@ -81,6 +122,8 @@ export function calculateCareerScore(job: Job, match: JobMatch, options: Ranking
     futureAIValue: match.futureAIValue,
     salaryPotential,
     salaryDataAvailable,
+    freshness,
+    freshnessDataAvailable,
     weightsUsed: Object.fromEntries(
       Object.entries(activeWeights).map(([key, weight]) => [key, weight / weightSum])
     )

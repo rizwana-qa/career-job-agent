@@ -194,3 +194,60 @@ export function evaluateCareerSignal(job: Job): CareerSignalResult {
 export function hasPositiveCareerSignal(job: Job): boolean {
   return evaluateCareerSignal(job).passes;
 }
+
+/**
+ * Non-software-QA filter (Phase 8.5 §8) — a NEW, additive guard, composed
+ * alongside isHardNegativeRole()/hasPositiveCareerSignal() at the
+ * discover-match route's call site (see careerDiscoverMatch.ts). Neither of
+ * those two existing functions is modified by this addition.
+ *
+ * Catches titles that superficially contain "QA"/"quality"/"AI" (so they'd
+ * otherwise pass the positive prefilter's broad `\bqa\b` title match) but
+ * belong to a fundamentally different QA discipline than software quality
+ * engineering: food/manufacturing/construction/textile QA-QC, pharma/
+ * medical-device QMS, NDT inspection, calibration, warehouse QA, oil & gas
+ * inspection, and call-center/BPO "Quality Analyst" roles. These are
+ * unconditionally rejected — there is no software-QA reading of them.
+ *
+ * AI-labeling roles (AI Trainer, AI Data Annotator, RLHF Rater, Data
+ * Labeling, AI microtask work) are rejected UNLESS the title also carries a
+ * genuine software-QA-engineering signal (STRONG_POSITIVE_TITLE_PATTERNS
+ * tier 1 above) — per Phase 8.5 §8's explicit exception ("unless the job is
+ * genuinely an engineering role with software quality ownership").
+ */
+const NON_SOFTWARE_QA_TITLE_PATTERNS: RegExp[] = [
+  /\bfood\s*(qa|qc|quality)\b/i,
+  /\bmanufacturing\s*(qa|qc|quality)\b/i,
+  /\bconstruction\s*(qa|qc|quality)\b/i,
+  /\btextile\s*(qa|qc|quality)\b/i,
+  /\bpharmaceutical\s*qms\b/i,
+  /\bpharma\s*qms\b/i,
+  /\bmedical\s*device\s*qms\b/i,
+  /\bndt\s*inspect(or|ion)\b/i,
+  /\bcalibration\s*(technician|engineer|specialist)\b/i,
+  /\bwarehouse\s*qa\b/i,
+  /\boil\s*(and|&)\s*gas\s*inspect(or|ion)\b/i,
+  /\b(call\s*cent(er|re)|bpo)\s*quality\s*analyst\b/i
+];
+
+/** Rejected unless the title also matches a genuine software-QA-engineering signal — see the exception in the doc comment above. */
+const AI_LABELING_TITLE_PATTERNS: RegExp[] = [
+  /\bai\s*trainer\b/i,
+  /\bai\s*data\s*annotator\b/i,
+  /\bdata\s*annotator\b/i,
+  /\brlhf\s*rater\b/i,
+  /\bdata\s*labeling\b/i,
+  /\bdata\s*labeler\b/i,
+  /\bai\s*microtask\b/i
+];
+
+export function isNonSoftwareQaRole(job: Job): boolean {
+  if (NON_SOFTWARE_QA_TITLE_PATTERNS.some((pattern) => pattern.test(job.jobTitle))) {
+    return true;
+  }
+  if (AI_LABELING_TITLE_PATTERNS.some((pattern) => pattern.test(job.jobTitle))) {
+    const isGenuineSoftwareQaEngineeringRole = STRONG_POSITIVE_TITLE_PATTERNS.some((pattern) => pattern.test(job.jobTitle));
+    return !isGenuineSoftwareQaEngineeringRole;
+  }
+  return false;
+}

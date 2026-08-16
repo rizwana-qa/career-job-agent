@@ -23,6 +23,7 @@ import { InMemoryIdempotencyStore, type IdempotencyStore } from "../../services/
 import {
   isHardNegativeRole,
   hasPositiveCareerSignal,
+  isNonSoftwareQaRole,
   CAREER_RELEVANCE_SCORE_THRESHOLD,
   MATCH_SCORE_THRESHOLD,
   SHORTLIST_ELIGIBLE_RECOMMENDATIONS
@@ -148,25 +149,26 @@ function describeGateRejectionReasons(ranked: RankedJob): string[] {
 }
 
 /**
- * Pre-Claude deterministic pipeline (Phase 8.3.3): Location eligibility ->
- * Hard negative title filter -> Positive career relevance prefilter,
- * checked in that order so the logged rejection reason always reflects the
- * FIRST stage that actually rejected a job. Strengthens the original
- * hard-negative-only guard (Phase 8.3) after production logs showed
- * obviously unrelated postings ("Remote Office Assistant", "Face
- * Deduplication Collection") reaching Claude and only getting rejected
- * afterward — see careerRelevanceFilter.ts's hasPositiveCareerSignal() for
- * the new tier. Logs only jobTitle/company/reason — never a description,
- * profile, resume, or Claude prompt content.
+ * Pre-Claude deterministic pipeline (Phase 8.3.3, extended by Phase 8.5 §6-8):
+ * Location eligibility -> Hard negative title filter -> Non-software-QA
+ * filter -> Positive career relevance prefilter, checked in that order so
+ * the logged rejection reason always reflects the FIRST stage that actually
+ * rejected a job. isHardNegativeRole()/hasPositiveCareerSignal() themselves
+ * are unmodified (Phase 8.5 §7) — isNonSoftwareQaRole() is a new, separate
+ * check composed in here alongside them, not a change to either.
  */
 function buildPreClaudeFilter(): (job: Job) => boolean {
   return (job: Job): boolean => {
     if (!isLocationEligible(job)) {
-      logPreClaudeRejection(job, "location not eligible (not Pakistan/UAE, and not remote)");
+      logPreClaudeRejection(job, "location not eligible (not Pakistan/UAE, and not remote-eligible)");
       return false;
     }
     if (isHardNegativeRole(job)) {
       logPreClaudeRejection(job, "hard negative title match (help desk/service desk/IT support/sysadmin/etc.)");
+      return false;
+    }
+    if (isNonSoftwareQaRole(job)) {
+      logPreClaudeRejection(job, "non-software-QA role (food/manufacturing/construction/pharma QC, BPO quality analyst, AI data labeling, etc.)");
       return false;
     }
     if (!hasPositiveCareerSignal(job)) {
@@ -285,7 +287,11 @@ export function createCareerDiscoverMatchRouter(deps: CareerDiscoverMatchRouterD
           claudeClient,
           profile,
           jobDiscoveryPreferences,
-          rankingOptions: deps.rankingOptions,
+          // Phase 8.5 §10 — freshness as a minor ranking tiebreaker for this
+          // endpoint only; /career/run and /jobs/discover never set this and
+          // are unaffected. A caller-supplied rankingOptions can still
+          // override it explicitly.
+          rankingOptions: { applyFreshnessBonus: true, ...deps.rankingOptions },
           // Deliberately NOT topJobs here — that's the caller's requested
           // *shortlist* size, applied below after the Career Relevance
           // Gate. Requesting topCount: maxJobs instead gets back every job

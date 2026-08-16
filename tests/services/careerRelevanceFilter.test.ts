@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { isHardNegativeRole, hasPositiveCareerSignal, evaluateCareerSignal } from "../../src/services/careerRelevanceFilter.js";
+import {
+  isHardNegativeRole,
+  hasPositiveCareerSignal,
+  evaluateCareerSignal,
+  isNonSoftwareQaRole
+} from "../../src/services/careerRelevanceFilter.js";
 import { isLocationEligible } from "../../src/services/locationEligibilityFilter.js";
 import type { Job } from "../../src/schemas/job.js";
 
@@ -174,5 +179,51 @@ describe("hasPositiveCareerSignal / evaluateCareerSignal — positive pre-Claude
       requirements: ["Organizational skills"]
     });
     expect(hasPositiveCareerSignal(twoSignals)).toBe(true); // "API Testing" + "Automation Framework" — a reasonable combination
+  });
+});
+
+/** Non-software-QA filter (Phase 8.5 §8) — a NEW, additive guard alongside isHardNegativeRole/hasPositiveCareerSignal, neither of which is modified. */
+describe("isNonSoftwareQaRole — non-software-QA filter", () => {
+  it("rejects industrial/manufacturing/construction/textile QA-QC titles", () => {
+    expect(isNonSoftwareQaRole(job({ jobTitle: "Food QA Inspector" }))).toBe(true);
+    expect(isNonSoftwareQaRole(job({ jobTitle: "Manufacturing QC Technician" }))).toBe(true);
+    expect(isNonSoftwareQaRole(job({ jobTitle: "Construction QA Manager" }))).toBe(true);
+    expect(isNonSoftwareQaRole(job({ jobTitle: "Textile QC Supervisor" }))).toBe(true);
+  });
+
+  it("rejects pharmaceutical/medical-device QMS and inspection/calibration titles", () => {
+    expect(isNonSoftwareQaRole(job({ jobTitle: "Pharmaceutical QMS Specialist" }))).toBe(true);
+    expect(isNonSoftwareQaRole(job({ jobTitle: "Medical Device QMS Engineer" }))).toBe(true);
+    expect(isNonSoftwareQaRole(job({ jobTitle: "NDT Inspector" }))).toBe(true);
+    expect(isNonSoftwareQaRole(job({ jobTitle: "Calibration Technician" }))).toBe(true);
+    expect(isNonSoftwareQaRole(job({ jobTitle: "Warehouse QA Associate" }))).toBe(true);
+    expect(isNonSoftwareQaRole(job({ jobTitle: "Oil and Gas Inspection Engineer" }))).toBe(true);
+  });
+
+  it("rejects call center / BPO Quality Analyst titles", () => {
+    expect(isNonSoftwareQaRole(job({ jobTitle: "Call Center Quality Analyst" }))).toBe(true);
+    expect(isNonSoftwareQaRole(job({ jobTitle: "BPO Quality Analyst" }))).toBe(true);
+  });
+
+  it("rejects AI-labeling roles (AI Trainer, Data Annotator, RLHF Rater, Data Labeling)", () => {
+    expect(isNonSoftwareQaRole(job({ jobTitle: "AI Trainer" }))).toBe(true);
+    expect(isNonSoftwareQaRole(job({ jobTitle: "AI Data Annotator" }))).toBe(true);
+    expect(isNonSoftwareQaRole(job({ jobTitle: "RLHF Rater" }))).toBe(true);
+    expect(isNonSoftwareQaRole(job({ jobTitle: "Data Labeling Specialist" }))).toBe(true);
+  });
+
+  it("does NOT reject an AI-labeling title that is also a genuine software-QA-engineering role", () => {
+    // Exception per Phase 8.5 §8: "unless the job is genuinely an engineering
+    // role with software quality ownership" — a title carrying both signals
+    // (e.g. an AI Quality Engineer role that also mentions data labeling
+    // oversight) must not be rejected here.
+    expect(isNonSoftwareQaRole(job({ jobTitle: "AI Quality Engineer - Data Labeling Oversight" }))).toBe(false);
+  });
+
+  it("does not reject genuine software QA/engineering titles", () => {
+    expect(isNonSoftwareQaRole(job({ jobTitle: "Senior QA Engineer" }))).toBe(false);
+    expect(isNonSoftwareQaRole(job({ jobTitle: "Principal Software Quality Engineer" }))).toBe(false);
+    expect(isNonSoftwareQaRole(job({ jobTitle: "SDET" }))).toBe(false);
+    expect(isNonSoftwareQaRole(job({ jobTitle: "AI Quality Engineer" }))).toBe(false);
   });
 });

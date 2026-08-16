@@ -91,3 +91,105 @@ implementing the `JobSource` interface (`src/jobSources/indeedJobSource.ts`,
    with the real, credentialed request, using `src/jobSources/searchConcepts.ts`'s
    centralized `CAREER_SEARCH_CONCEPTS` / `TARGET_SEARCH_LOCATIONS` to build
    a small, bounded query set — not per-keyword fan-out.
+
+---
+
+# Final source stack (Phase 8.5)
+
+Six additional sources, per the project's specified final source strategy.
+The four with a genuinely documented, no-credential public API get real,
+`fetch()`-capable adapters (mirroring `remotiveJobSource.ts`'s structure);
+the two that require a credential this environment doesn't have follow the
+same placeholder pattern as Indeed/Naukrigulf/GulfTalent above.
+
+**Important caveat**: no live call was made to any of these six during
+implementation (explicitly prohibited for this phase). For the four
+"real" adapters, the exact response field names in each `*RawJob`/
+`*RawItem` type are this codebase's best-effort, documented understanding
+of that provider's public feed — **not yet verified against a live
+response**. Treat the first real invocation of each as the moment its raw
+shape actually gets confirmed, the same way Phase 6.1 required one
+authorized live Claude call before that integration was trusted.
+
+## Himalayas
+
+| | |
+|---|---|
+| Access method | Public JSON API — `GET https://himalayas.app/jobs/api/search` |
+| Available | YES |
+| Credential required | NO |
+| Implementable now | YES (raw shape unverified — see caveat above) — `src/jobSources/himalayasJobSource.ts` |
+
+Respects the documented ~20-result-per-request limit. `applicationLink` is
+used as `sourceUrl`; a job without one is dropped, never reconstructed.
+
+## Remote OK
+
+| | |
+|---|---|
+| Access method | Public JSON API — `GET https://remoteok.com/api` |
+| Available | YES |
+| Credential required | NO |
+| Implementable now | YES (raw shape unverified — see caveat above) — `src/jobSources/remoteOkJobSource.ts` |
+
+Never scrapes HTML. The feed's own leading non-job legal/notice entry is
+naturally dropped by `normalize()`'s required-field checks.
+
+## Careerjet
+
+| | |
+|---|---|
+| Access method | Documented partner/affiliate API — requires an approved affiliate account |
+| Available | Partner-gated |
+| Credential required | YES — `CAREERJET_API_KEY` + `CAREERJET_AFFILIATE_ID`, not configured in this environment |
+| Implementable now | NO — placeholder adapter (`src/jobSources/careerjetJobSource.ts`) |
+
+## Jobicy
+
+| | |
+|---|---|
+| Access method | Public JSON API — `GET https://jobicy.com/api/v2/remote-jobs` |
+| Available | YES |
+| Credential required | NO |
+| Implementable now | YES (raw shape unverified — see caveat above) — `src/jobSources/jobicyJobSource.ts` |
+
+## Jooble
+
+| | |
+|---|---|
+| Access method | Documented REST API |
+| Available | YES, key-gated |
+| Credential required | YES — `JOOBLE_API_KEY`, not configured in this environment |
+| Implementable now | NO — placeholder adapter (`src/jobSources/joobleJobSource.ts`) |
+
+## We Work Remotely
+
+| | |
+|---|---|
+| Access method | Public RSS feed — `GET https://weworkremotely.com/categories/remote-programming-jobs.rss` |
+| Available | YES |
+| Credential required | NO |
+| Implementable now | YES (raw shape unverified — see caveat above) — `src/jobSources/weWorkRemotelyJobSource.ts` |
+
+No authorized API token exists for WWR, so this uses public RSS only, per
+the project's explicit instruction. Parsed with a small dependency-free
+regex-based extractor (`parseWeWorkRemotelyRss()`) rather than adding an
+XML library for one feed.
+
+## Feature flags and defaults
+
+`JOB_SOURCE_HIMALAYAS_ENABLED`, `JOB_SOURCE_REMOTEOK_ENABLED`,
+`JOB_SOURCE_CAREERJET_ENABLED`, `JOB_SOURCE_JOBICY_ENABLED`,
+`JOB_SOURCE_JOOBLE_ENABLED`, `JOB_SOURCE_WWR_ENABLED` all default to
+**false** — including Himalayas/Remote OK/Jobicy/WWR, despite having a
+documented no-credential public API. This is deliberately more
+conservative than the project's stated "recommended production defaults
+after successful integration" table (Himalayas/Remote OK/Careerjet/Remotive
+= true). Only `JOB_SOURCE_REMOTIVE_ENABLED` stays at its existing default
+(true), since it's the one source already verified live in production.
+
+Flip a flag on only after that source has been verified — e.g. via one
+authorized live test per source, the same pattern Phase 6.1 used for the
+Claude integration. Every source, once enabled, is isolated by the existing
+per-source error handling (`src/services/jobDiscoveryService.ts`): a bad
+response or an outage from one source never fails the whole discovery run.

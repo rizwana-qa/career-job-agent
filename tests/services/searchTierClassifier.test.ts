@@ -169,6 +169,49 @@ describe("classifySearchTier — Phase 8.5.9 §9 regression cases A-P", () => {
   });
 });
 
+/** Phase 8.5.14 §6/§9 — SQA/QC/AI-eval title-family alignment with careerRelevanceFilter.ts. */
+describe("classifySearchTier — real-world QA title variants (Phase 8.5.14)", () => {
+  it("Principal SQA Engineer -> TIER_1", () => {
+    expect(classifySearchTier(job("Principal SQA Engineer"))).toBe("TIER_1");
+  });
+
+  it("Staff SQA Engineer -> TIER_1", () => {
+    expect(classifySearchTier(job("Staff SQA Engineer"))).toBe("TIER_1");
+  });
+
+  it("SQA Lead -> TIER_2", () => {
+    expect(classifySearchTier(job("SQA Lead"))).toBe("TIER_2");
+  });
+
+  it("[E] Senior principal QA Engineer -> TIER_1 (Principal takes priority over Senior)", () => {
+    expect(classifySearchTier(job("Senior principal QA Engineer"))).toBe("TIER_1");
+  });
+
+  it("Senior SQA Engineer -> TIER_3", () => {
+    expect(classifySearchTier(job("Senior SQA Engineer"))).toBe("TIER_3");
+  });
+
+  it("[G] Agent Quality Engineer -> TIER_4", () => {
+    expect(classifySearchTier(job("Agent Quality Engineer"))).toBe("TIER_4");
+  });
+
+  it("Agent Quality / Evals Engineer -> TIER_4", () => {
+    expect(classifySearchTier(job("Agent Quality / Evals Engineer"))).toBe("TIER_4");
+  });
+
+  it("[H] LLM Evaluation Engineer -> TIER_4", () => {
+    expect(classifySearchTier(job("LLM Evaluation Engineer"))).toBe("TIER_4");
+  });
+
+  it("Senior QC Engineer -> TIER_3 (title-only; only ever reached after careerRelevanceFilter.ts already confirmed software-testing context)", () => {
+    // classifySearchTier() is title-only by design and only ever runs on
+    // jobs that already passed hasPositiveCareerSignal() — for a bare "QC"
+    // title, that means its description already carried the required
+    // software-testing evidence (see careerRelevanceFilter.test.ts [D]).
+    expect(classifySearchTier(job("Senior QC Engineer"))).toBe("TIER_3");
+  });
+});
+
 describe("SEARCH_TIER_PRIORITY_ORDER", () => {
   it("is Tier 1 -> Tier 2 -> Tier 4 -> Tier 3 -> UNTIERED (Phase 8.5.6 §3) — NOT Tier 1 -> 2 -> 3 -> 4", () => {
     expect(SEARCH_TIER_PRIORITY_ORDER).toEqual(["TIER_1", "TIER_2", "TIER_4", "TIER_3", "UNTIERED"]);

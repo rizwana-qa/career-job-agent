@@ -119,16 +119,52 @@ const STRONG_POSITIVE_TITLE_PATTERNS: RegExp[] = [
   /\brag\s*testing\b/i,
   /\bai\s*agent\s*testing\b/i,
   /\btest\s*architect\b/i,
-  /\bautomation\s*architect\b/i
+  /\bautomation\s*architect\b/i,
+  // Phase 8.5.14 §2 — SQA (Software Quality Assurance) is a legitimate,
+  // widely-used software-QA abbreviation, distinct from bare "QC"/"Quality
+  // Control" (see AMBIGUOUS_TITLE_PATTERNS below) — real Himalayas data
+  // observed via Phase 8.5.11/8.5.13 included "SQA Engineer" titles that
+  // this list didn't recognize even though searchTierClassifier.ts already
+  // treated \bsqa\b as a quality-family signal since Phase 8.5.9.
+  /\bsqa\b/i,
+  // Phase 8.5.14 §4 — real AI/agent-evaluation title phrasing observed via
+  // Phase 8.5.11/8.5.13 ("Agent Quality / Evals Engineer") that didn't match
+  // any existing compound AI-quality pattern here (only "AI QA"/"LLM
+  // Testing"/"RAG Testing"/"AI Agent Testing" existed). Each of these is a
+  // specific compound phrase (never bare "quality" or "AI" alone — see §5),
+  // so a generic "AI Engineer"/"AI Researcher"/"Machine Learning Engineer"
+  // still does not match any of these.
+  /\bagent\s*quality\b/i,
+  /\bagent\s*evaluation\b/i,
+  /\bagent\s*evals?\b/i,
+  /\bai\s*evaluation\b/i,
+  /\bai\s*evals?\b/i,
+  /\bllm\s*evaluation\b/i,
+  /\bmodel\s*evaluation\b/i,
+  /\bai\s*model\s*quality\b/i,
+  /\bgenai\s*quality\b/i
 ];
 
-/** Broad titles that must never be pre-Claude-rejected on title alone — see tier 2 above. */
+/**
+ * Broad titles that must never be pre-Claude-rejected on title alone — see
+ * tier 2 above. Phase 8.5.14 §3 adds QC ("Quality Control") here rather
+ * than to STRONG_POSITIVE_TITLE_PATTERNS: unlike "QA", "QC" is heavily
+ * overloaded with non-software meanings (manufacturing/food/construction/
+ * pharma quality control), so a bare "QC"/"Quality Control" title must
+ * still clear the SAME bounded secondary-signal combination check as every
+ * other ambiguous title before it passes — title alone is never enough for
+ * QC (real Himalayas data included a "Senior QC Engineer" title that must
+ * only pass when its description actually carries software/testing
+ * evidence — see SECONDARY_SKILL_SIGNALS below).
+ */
 const AMBIGUOUS_TITLE_PATTERNS: RegExp[] = [
   /\bsoftware\s*engineer\b/i,
   /\bengineering\s*manager\b/i,
   /\btechnical\s*lead\b/i,
   /\bai\s*engineer\b/i,
-  /\bautomation\s*engineer\b/i
+  /\bautomation\s*engineer\b/i,
+  /\bqc\b/i,
+  /\bquality\s*control\b/i
 ];
 
 interface SecondarySignal {
@@ -156,7 +192,21 @@ const SECONDARY_SKILL_SIGNALS: SecondarySignal[] = [
   { label: "AI Agents", pattern: /\bai\s*agents?\b/i },
   { label: "AI Quality", pattern: /\bai\s*quality\b/i },
   { label: "Test Strategy", pattern: /\btest\s*strategy\b/i },
-  { label: "CI/CD Testing", pattern: /\bci\s*\/?\s*cd\s*testing\b/i }
+  { label: "CI/CD Testing", pattern: /\bci\s*\/?\s*cd\s*testing\b/i },
+  // Phase 8.5.14 §7 — the additional software-context signals needed to
+  // give an ambiguous title (Software Engineer, QC, Quality Control, etc.)
+  // a fair chance to pass on real description evidence, matching the
+  // explicit list requested for QC/Quality-Control-style contextual checks.
+  { label: "QA", pattern: /\bqa\b/i },
+  { label: "SQA", pattern: /\bsqa\b/i },
+  { label: "SDET", pattern: /\bsdet\b/i },
+  { label: "Test Architecture", pattern: /\btest\s*architecture\b/i },
+  { label: "Software Quality", pattern: /\bsoftware\s*quality\b/i },
+  { label: "Functional Testing", pattern: /\bfunctional\s*testing\b/i },
+  { label: "Regression Testing", pattern: /\bregression\s*testing\b/i },
+  { label: "Integration Testing", pattern: /\bintegration\s*testing\b/i },
+  { label: "LLM Evaluation", pattern: /\bllm\s*evaluation\b/i },
+  { label: "Agent Testing", pattern: /\bagent\s*testing\b/i }
 ];
 
 /** A single incidental keyword is never enough (Phase 8.3.3 §2) — this many DISTINCT secondary signals must appear before an ambiguously-titled job passes on description alone. */
@@ -226,10 +276,18 @@ export function hasPositiveCareerSignal(job: Job): boolean {
  * Catches titles that superficially contain "QA"/"quality"/"AI" (so they'd
  * otherwise pass the positive prefilter's broad `\bqa\b` title match) but
  * belong to a fundamentally different QA discipline than software quality
- * engineering: food/manufacturing/construction/textile QA-QC, pharma/
- * medical-device QMS, NDT inspection, calibration, warehouse QA, oil & gas
+ * engineering: food/manufacturing/construction/textile/warehouse QA-QC,
+ * pharma/medical-device QMS, NDT inspection, calibration, oil & gas
  * inspection, and call-center/BPO "Quality Analyst" roles. These are
  * unconditionally rejected — there is no software-QA reading of them.
+ *
+ * Phase 8.5.14 §8: the industry-vs-quality-word check below is
+ * ORDER-INDEPENDENT (co-occurrence, not a single fixed-adjacency regex) —
+ * real Himalayas titles reverse the word order this filter originally
+ * assumed ("QC Inspector, Manufacturing" and "Quality Control Engineer,
+ * Construction" put the industry word AFTER the quality word, often
+ * comma-separated), which the original "industry + qa/qc/quality" adjacency
+ * patterns missed entirely.
  *
  * AI-labeling roles (AI Trainer, AI Data Annotator, RLHF Rater, Data
  * Labeling, AI microtask work) are rejected UNLESS the title also carries a
@@ -237,17 +295,35 @@ export function hasPositiveCareerSignal(job: Job): boolean {
  * tier 1 above) — per Phase 8.5 §8's explicit exception ("unless the job is
  * genuinely an engineering role with software quality ownership").
  */
+const NON_SOFTWARE_INDUSTRY_TITLE_WORDS: RegExp[] = [
+  /\bfood\b/i,
+  /\bmanufacturing\b/i,
+  /\bconstruction\b/i,
+  /\btextile\b/i,
+  /\bwarehouse\b/i,
+  /\boil\s*(and|&)\s*gas\b/i
+];
+
+const QUALITY_DISCIPLINE_TITLE_WORDS: RegExp[] = [/\bqa\b/i, /\bqc\b/i, /\bquality\b/i];
+
+/** True when the title contains BOTH a non-software-industry word and a QA/QC/quality word, anywhere in the title, regardless of order or punctuation. */
+function hasNonSoftwareIndustryQualityCoOccurrence(title: string): boolean {
+  return NON_SOFTWARE_INDUSTRY_TITLE_WORDS.some((pattern) => pattern.test(title)) && QUALITY_DISCIPLINE_TITLE_WORDS.some((pattern) => pattern.test(title));
+}
+
 const NON_SOFTWARE_QA_TITLE_PATTERNS: RegExp[] = [
-  /\bfood\s*(qa|qc|quality)\b/i,
-  /\bmanufacturing\s*(qa|qc|quality)\b/i,
-  /\bconstruction\s*(qa|qc|quality)\b/i,
-  /\btextile\s*(qa|qc|quality)\b/i,
   /\bpharmaceutical\s*qms\b/i,
   /\bpharma\s*qms\b/i,
   /\bmedical\s*device\s*qms\b/i,
-  /\bndt\s*inspect(or|ion)\b/i,
+  /\bpharmaceutical\s*quality\s*control\b/i,
+  /\bpharma\s*quality\s*control\b/i,
+  // "Inspector"/"Auditor" job-function words are, in real-world usage,
+  // essentially never applied to software QA/testing roles (which use
+  // "Engineer"/"Analyst"/"Tester") — kept unconditional even without a
+  // stated industry qualifier.
+  /\bndt\s*(quality\s*)?inspect(or|ion)?\b/i,
+  /\bqc\s*inspect(or|ion)\b/i,
   /\bcalibration\s*(technician|engineer|specialist)\b/i,
-  /\bwarehouse\s*qa\b/i,
   /\boil\s*(and|&)\s*gas\s*inspect(or|ion)\b/i,
   /\b(call\s*cent(er|re)|bpo)\s*quality\s*analyst\b/i
 ];
@@ -264,6 +340,9 @@ const AI_LABELING_TITLE_PATTERNS: RegExp[] = [
 ];
 
 export function isNonSoftwareQaRole(job: Job): boolean {
+  if (hasNonSoftwareIndustryQualityCoOccurrence(job.jobTitle)) {
+    return true;
+  }
   if (NON_SOFTWARE_QA_TITLE_PATTERNS.some((pattern) => pattern.test(job.jobTitle))) {
     return true;
   }

@@ -49,7 +49,15 @@ const TIER_4_TITLE_PATTERNS: RegExp[] = [
   /\bagent\s*test\b/i,
   /\bagent\s*evaluation\b/i,
   /\bgenai\s*qa\b/i,
-  /\bai\s*model\s*quality\b/i
+  /\bai\s*model\s*quality\b/i,
+  // Phase 8.5.14 §6 — kept in sync with careerRelevanceFilter.ts's
+  // STRONG_POSITIVE_TITLE_PATTERNS additions ("Agent Quality / Evals
+  // Engineer" — a real Himalayas title — otherwise passes the career
+  // prefilter but falls to UNTIERED here, an unjustified cross-system split).
+  /\bagent\s*quality\b/i,
+  /\bagent\s*evals?\b/i,
+  /\bmodel\s*evaluation\b/i,
+  /\bgenai\s*quality\b/i
 ];
 
 /**
@@ -71,7 +79,16 @@ const QUALITY_FAMILY_TITLE_PATTERNS: RegExp[] = [
   /\btest\s*engineer\b/i,
   /\btest\s*architect\b/i,
   /\bautomation\s*architect\b/i,
-  /\btest\s*automation\b/i
+  /\btest\s*automation\b/i,
+  // Phase 8.5.14 §3/§6 — QC/Quality Control only ever reaches this function
+  // after already clearing careerRelevanceFilter.ts's contextual check (a
+  // QC-titled job only passes hasPositiveCareerSignal() when its
+  // description carries real software/testing evidence — see
+  // AMBIGUOUS_TITLE_PATTERNS there), so by the time classifySearchTier()
+  // sees it, its software-QA relevance is already confirmed and it's safe
+  // to treat as a title-level quality-family signal here too.
+  /\bqc\b/i,
+  /\bquality\s*control\b/i
 ];
 
 const TIER_1_SENIORITY_TITLE_PATTERNS: RegExp[] = [/\bprincipal\b/i, /\bstaff\b/i, /\barchitect\b/i];

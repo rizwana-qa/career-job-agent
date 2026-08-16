@@ -196,6 +196,74 @@ describe("hasPositiveCareerSignal / evaluateCareerSignal — positive pre-Claude
   });
 });
 
+/**
+ * Phase 8.5.14 §9 — regression tests using the actual title variants
+ * observed via the Phase 8.5.11 live Himalayas diagnostic and the Phase
+ * 8.5.13 trace harness, which exposed real title-pattern gaps.
+ */
+describe("evaluateCareerSignal / hasPositiveCareerSignal — real-world QA title variants (Phase 8.5.14)", () => {
+  it("[A] 'SQA Engineer - Manual + Automation' passes on title alone (SQA is a legitimate software-QA abbreviation)", () => {
+    const result = evaluateCareerSignal(
+      job({ jobTitle: "SQA Engineer - Manual + Automation", jobDescription: "See original posting for details.", skills: [] })
+    );
+    expect(result.passes).toBe(true);
+    expect(result.strength).toBe("STRONG_TITLE");
+  });
+
+  it("[B] 'Principal Engineer, QA Manual' passes on title alone", () => {
+    const result = evaluateCareerSignal(
+      job({ jobTitle: "Principal Engineer, QA Manual", jobDescription: "See original posting for details.", skills: [] })
+    );
+    expect(result.passes).toBe(true);
+    expect(result.strength).toBe("STRONG_TITLE");
+  });
+
+  it("[C] 'Agent Quality / Evals Engineer' passes as an AI quality signal on title alone", () => {
+    const result = evaluateCareerSignal(
+      job({ jobTitle: "Agent Quality / Evals Engineer", jobDescription: "See original posting for details.", skills: [] })
+    );
+    expect(result.passes).toBe(true);
+    expect(result.strength).toBe("STRONG_TITLE");
+  });
+
+  it("[D] 'Senior QC Engineer' requires contextual software evidence — rejected without it, admitted with a genuine combination", () => {
+    const withoutContext = job({
+      jobTitle: "Senior QC Engineer",
+      jobDescription: "Join our quality team to inspect and verify product output before shipment.",
+      skills: [],
+      responsibilities: ["Inspect finished goods"],
+      requirements: ["Attention to detail"]
+    });
+    expect(hasPositiveCareerSignal(withoutContext)).toBe(false);
+
+    const withContext = job({
+      jobTitle: "Senior QC Engineer, Software Testing",
+      jobDescription: "Own our software testing and API testing strategy, maintaining our automation framework and CI/CD pipelines.",
+      skills: [],
+      responsibilities: ["Own the automation framework"],
+      requirements: ["API testing experience"]
+    });
+    const withContextResult = evaluateCareerSignal(withContext);
+    expect(withContextResult.passes).toBe(true);
+    expect(withContextResult.strength).toBe("AMBIGUOUS_TITLE");
+  });
+
+  it("[F] 'SQA Engineer' (bare) is recognized as a genuine quality-family title signal", () => {
+    const result = evaluateCareerSignal(job({ jobTitle: "SQA Engineer", jobDescription: "See original posting for details.", skills: [] }));
+    expect(result.passes).toBe(true);
+    expect(result.strength).toBe("STRONG_TITLE");
+  });
+
+  it("a bare 'sqa' occurring only inside an unrelated word is not treated as a signal (word-boundary safety)", () => {
+    // "sqa" is not naturally a word-fragment collision risk, but this guards
+    // the word-boundary requirement explicitly per §2's instruction.
+    const result = evaluateCareerSignal(
+      job({ jobTitle: "Aqsqashire Regional Manager", jobDescription: "See original posting for details.", skills: [] })
+    );
+    expect(result.strength).not.toBe("STRONG_TITLE");
+  });
+});
+
 /** Non-software-QA filter (Phase 8.5 §8) — a NEW, additive guard alongside isHardNegativeRole/hasPositiveCareerSignal, neither of which is modified. */
 describe("isNonSoftwareQaRole — non-software-QA filter", () => {
   it("rejects industrial/manufacturing/construction/textile QA-QC titles", () => {
@@ -224,6 +292,18 @@ describe("isNonSoftwareQaRole — non-software-QA filter", () => {
     expect(isNonSoftwareQaRole(job({ jobTitle: "AI Data Annotator" }))).toBe(true);
     expect(isNonSoftwareQaRole(job({ jobTitle: "RLHF Rater" }))).toBe(true);
     expect(isNonSoftwareQaRole(job({ jobTitle: "Data Labeling Specialist" }))).toBe(true);
+  });
+
+  /** Phase 8.5.14 §8 — real titles that reverse the usual "industry + qa/qc/quality" word order, or use industry wording the original patterns didn't cover. */
+  it("rejects reversed-word-order and previously-uncovered industrial titles (Phase 8.5.14 §8)", () => {
+    expect(isNonSoftwareQaRole(job({ jobTitle: "QC Inspector, Manufacturing" }))).toBe(true);
+    expect(isNonSoftwareQaRole(job({ jobTitle: "Quality Control Engineer, Construction" }))).toBe(true);
+    expect(isNonSoftwareQaRole(job({ jobTitle: "Food Quality Assurance" }))).toBe(true);
+    expect(isNonSoftwareQaRole(job({ jobTitle: "Pharmaceutical Quality Control" }))).toBe(true);
+    expect(isNonSoftwareQaRole(job({ jobTitle: "Textile Quality Inspector" }))).toBe(true);
+    expect(isNonSoftwareQaRole(job({ jobTitle: "NDT Quality Inspector" }))).toBe(true);
+    expect(isNonSoftwareQaRole(job({ jobTitle: "Warehouse Quality Inspector" }))).toBe(true);
+    expect(isNonSoftwareQaRole(job({ jobTitle: "Quality Auditor, Manufacturing" }))).toBe(true);
   });
 
   it("does NOT reject an AI-labeling title that is also a genuine software-QA-engineering role", () => {

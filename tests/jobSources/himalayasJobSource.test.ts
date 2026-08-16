@@ -57,8 +57,84 @@ describe("normalizeHimalayasJob", () => {
     expect(normalizeHimalayasJob(rawHimalayasJob({ applicationLink: undefined }))).toBeNull();
   });
 
-  it("returns null for an unrecognized employment type", () => {
+  it("[I] returns null for an unrecognized employment type — unknown values continue to fail safely, never silently mapped", () => {
     expect(normalizeHimalayasJob(rawHimalayasJob({ employmentType: "gig" }))).toBeNull();
+  });
+
+  /**
+   * Phase 8.5.20 §3 — regression cases A-H using the real values Phase
+   * 8.5.19's one authorized live call confirmed the Himalayas API actually
+   * returns ("Full Time", "Contractor"), plus the previously-assumed
+   * snake_case values, which must keep working unchanged.
+   */
+  describe("employment type normalization — real observed API values (Phase 8.5.20)", () => {
+    it("[A] 'Full Time' -> FULL_TIME", () => {
+      const normalized = normalizeHimalayasJob(rawHimalayasJob({ employmentType: "Full Time" })) as Record<string, unknown>;
+      expect(normalized.employmentType).toBe("FULL_TIME");
+    });
+
+    it("[B] 'full_time' -> FULL_TIME", () => {
+      const normalized = normalizeHimalayasJob(rawHimalayasJob({ employmentType: "full_time" })) as Record<string, unknown>;
+      expect(normalized.employmentType).toBe("FULL_TIME");
+    });
+
+    it("[C] 'Part Time' -> PART_TIME", () => {
+      const normalized = normalizeHimalayasJob(rawHimalayasJob({ employmentType: "Part Time" })) as Record<string, unknown>;
+      expect(normalized.employmentType).toBe("PART_TIME");
+    });
+
+    it("[D] 'part_time' -> PART_TIME", () => {
+      const normalized = normalizeHimalayasJob(rawHimalayasJob({ employmentType: "part_time" })) as Record<string, unknown>;
+      expect(normalized.employmentType).toBe("PART_TIME");
+    });
+
+    it("[E] 'Contractor' -> CONTRACT (the real API value)", () => {
+      const normalized = normalizeHimalayasJob(rawHimalayasJob({ employmentType: "Contractor" })) as Record<string, unknown>;
+      expect(normalized.employmentType).toBe("CONTRACT");
+    });
+
+    it("[F] 'Contract' -> CONTRACT", () => {
+      const normalized = normalizeHimalayasJob(rawHimalayasJob({ employmentType: "Contract" })) as Record<string, unknown>;
+      expect(normalized.employmentType).toBe("CONTRACT");
+    });
+
+    it("[G] 'Freelance' -> FREELANCE", () => {
+      const normalized = normalizeHimalayasJob(rawHimalayasJob({ employmentType: "Freelance" })) as Record<string, unknown>;
+      expect(normalized.employmentType).toBe("FREELANCE");
+    });
+
+    it("[H] 'Internship' -> INTERNSHIP", () => {
+      const normalized = normalizeHimalayasJob(rawHimalayasJob({ employmentType: "Internship" })) as Record<string, unknown>;
+      expect(normalized.employmentType).toBe("INTERNSHIP");
+    });
+
+    it("[J] a real-Himalayas-shaped sample (numeric unix-seconds pubDate, guid-only id, employmentType 'Full Time') normalizes to a valid Job", () => {
+      const realShaped: HimalayasRawJob = {
+        id: undefined,
+        guid: "https://himalayas.app/companies/squadio/jobs/senior-qc-engineer-squadio-squad",
+        title: "Senior QC Engineer - Squadio Squad",
+        companyName: "Squadio",
+        locationRestrictions: ["Worldwide"],
+        employmentType: "Full Time",
+        pubDate: 1782986675, // unix seconds, as confirmed live
+        applicationLink: "https://himalayas.app/companies/squadio/jobs/senior-qc-engineer-squadio-squad",
+        description:
+          "Own quality engineering strategy across a growing SaaS platform, including automation, manual and API testing coverage."
+      };
+      const normalized = normalizeHimalayasJob(realShaped) as Record<string, unknown> | null;
+      expect(normalized).not.toBeNull();
+      expect(normalized).toMatchObject({
+        jobTitle: "Senior QC Engineer - Squadio Squad",
+        company: "Squadio",
+        employmentType: "FULL_TIME",
+        source: "himalayas",
+        sourceUrl: "https://himalayas.app/companies/squadio/jobs/senior-qc-engineer-squadio-squad",
+        externalJobId: "https://himalayas.app/companies/squadio/jobs/senior-qc-engineer-squadio-squad"
+      });
+      // §5 — date preservation: unix-seconds pubDate still converts correctly.
+      expect(typeof (normalized as { datePosted: string }).datePosted).toBe("string");
+      expect((normalized as { datePosted: string }).datePosted).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    });
   });
 
   it("returns null when required fields are missing", () => {

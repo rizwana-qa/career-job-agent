@@ -128,7 +128,7 @@ export interface HimalayasRawJob extends RawProviderJob {
   companyName?: string;
   locationRestrictions?: string[];
   seniority?: string;
-  employmentType?: string; // "full_time" | "part_time" | "contract" | "freelance" | "internship"
+  employmentType?: string; // documented placeholder assumed "full_time" | "part_time" | "contract" | "freelance" | "internship"; real API (confirmed Phase 8.5.19) returns Title Case values like "Full Time" / "Contractor" — see normalizeEmploymentTypeKey()
   minSalary?: number;
   maxSalary?: number;
   salaryCurrency?: string;
@@ -153,6 +153,26 @@ const EMPLOYMENT_TYPE_MAP: Record<string, string> = {
   internship: "INTERNSHIP"
 };
 
+/**
+ * Phase 8.5.20 — the real Himalayas API was confirmed (Phase 8.5.19's one
+ * authorized live call) to return human-readable, Title-Case values
+ * ("Full Time", "Contractor") rather than the snake_case values this
+ * adapter originally assumed ("full_time", "contract"). This was the exact
+ * cause of every Himalayas job silently normalizing to null before ever
+ * reaching filterEligibleJobs() — the employment-type check runs first in
+ * normalizeHimalayasJob(), before title/company/description are even
+ * inspected. Normalizes whitespace/case into the existing map's snake_case
+ * keys, plus the one non-whitespace synonym ("contractor" -> "contract")
+ * observed live — never invents a new employment category, and an
+ * unrecognized value still resolves to a key with no map entry, so unknown
+ * types continue to fail safely (normalizeHimalayasJob returns null) exactly
+ * as before.
+ */
+function normalizeEmploymentTypeKey(raw: string): string {
+  const cleaned = raw.trim().toLowerCase().replace(/\s+/g, "_");
+  return cleaned === "contractor" ? "contract" : cleaned;
+}
+
 function toDatePosted(pubDate: unknown): string {
   if (typeof pubDate === "number") {
     const ms = pubDate > 1e12 ? pubDate : pubDate * 1000; // seconds vs ms
@@ -174,7 +194,7 @@ function toDatePosted(pubDate: unknown): string {
  * at a guessed/reconstructed Himalayas page URL.
  */
 export function normalizeHimalayasJob(raw: HimalayasRawJob): unknown | null {
-  const employmentTypeKey = typeof raw.employmentType === "string" ? raw.employmentType.trim().toLowerCase() : "";
+  const employmentTypeKey = typeof raw.employmentType === "string" ? normalizeEmploymentTypeKey(raw.employmentType) : "";
   const employmentType = EMPLOYMENT_TYPE_MAP[employmentTypeKey];
   if (!employmentType) {
     return null;

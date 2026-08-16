@@ -4,8 +4,16 @@ import type { EvidenceStatement } from "../schemas/jobMatch.js";
 import { MATCH_SCORE_LABEL } from "../schemas/jobMatch.js";
 import { loadJobsFromInput } from "./jobSourceService.js";
 import { deduplicateJobs, filterEligibleJobs, type FilterOptions } from "./jobFilterService.js";
+import { evaluateCareerSignal } from "./careerRelevanceFilter.js";
 import { matchJobToProfile } from "../agents/jobMatchingAgent.js";
-import { rankJobs, selectTopJobs, type RankableEntry, type RankedJob, type RankingOptions } from "../ranking/jobRanking.js";
+import {
+  computeFreshnessScore,
+  rankJobs,
+  selectTopJobs,
+  type RankableEntry,
+  type RankedJob,
+  type RankingOptions
+} from "../ranking/jobRanking.js";
 import type { RelevantProfileFields } from "./profileService.js";
 import { ClaudeNotConfiguredError, toSafeErrorMessage } from "../utils/errors.js";
 
@@ -128,6 +136,62 @@ export interface AnalyzeJobsResult {
   jobsSentToMatching?: number;
 }
 
+/** Cheap, deterministic proxy for "how confident is this a real QA-family role" — never Claude-driven. Mirrors the tier ordering careerRelevanceFilter.ts already uses (strong title match > an explicit combination of secondary signals > a merely-plausible broad title). */
+const SIGNAL_STRENGTH_SCORE: Record<string, number> = {
+  STRONG_TITLE: 100,
+  SECONDARY_SIGNALS: 70,
+  AMBIGUOUS_TITLE: 40,
+  NONE: 0
+};
+
+function candidateOrderingScore(job: Job): number {
+  const strength = SIGNAL_STRENGTH_SCORE[evaluateCareerSignal(job).strength] ?? 0;
+  const freshness = computeFreshnessScore(job) ?? 0;
+  // Freshness is a minor tiebreak only (0-10 points), never enough to
+  // outrank a stronger role signal — matches jobRanking.ts's own philosophy
+  // that freshness is a tiebreaker, not a primary signal.
+  return strength + freshness * 0.1;
+}
+
+/**
+ * Fair, deterministic candidate ordering (Phase 8.5.2 §5-6) — used only when
+ * `preMatchFilter` is supplied (POST /career/discover-match's multi-source
+ * path; see analyzeJobs() below). Two steps, neither Claude-driven:
+ * 1. Within each source, sort candidates by candidateOrderingScore()
+ *    (role-signal strength, then freshness) so the strongest candidates
+ *    from any given source surface first.
+ * 2. Round-robin merge across sources, so a single large source (e.g.
+ *    Remote OK returning 101 raw jobs against Himalayas's 20) can never
+ *    consume the entire maxJobs budget purely because it returned more raw
+ *    jobs — every enabled source gets a fair shot before any one source's
+ *    later candidates are considered.
+ */
+export function orderCandidatesForMatching(jobs: Job[]): Job[] {
+  const bySource = new Map<string, Job[]>();
+  for (const job of jobs) {
+    const group = bySource.get(job.source);
+    if (group) {
+      group.push(job);
+    } else {
+      bySource.set(job.source, [job]);
+    }
+  }
+  for (const group of bySource.values()) {
+    group.sort((a, b) => candidateOrderingScore(b) - candidateOrderingScore(a));
+  }
+
+  const sourceGroups = Array.from(bySource.values());
+  const merged: Job[] = [];
+  for (let index = 0; merged.length < jobs.length; index++) {
+    for (const group of sourceGroups) {
+      if (index < group.length) {
+        merged.push(group[index]);
+      }
+    }
+  }
+  return merged;
+}
+
 /**
  * The full Phase 2 pipeline: Validate -> Deduplicate -> Deterministic Filter
  * -> Claude Matching -> Deterministic Ranking -> Top 5. Orchestration only —
@@ -145,23 +209,42 @@ export async function analyzeJobs(rawJobs: unknown[], deps: AnalyzeJobsDependenc
   const { eligible } = filterEligibleJobs(dedupedJobs, deps.filterOptions);
   const jobsEligible = eligible.length;
 
-  // maxJobs caps only what proceeds to Claude — jobsEligible above always
-  // reports the true, uncapped deterministic-filter count.
-  const cappedForMatching = deps.maxJobs !== undefined ? eligible.slice(0, deps.maxJobs) : eligible;
-
-  // preMatchFilter (Phase 8.3): applied before the Claude-client check below
-  // so a run consisting entirely of hard-filtered jobs never spuriously
-  // requires a configured Claude client for jobs it was never going to send.
+  // jobsEligible above always reports the true, uncapped deterministic-
+  // filter count, regardless of maxJobs.
+  //
+  // Phase 8.5.2 fix: preMatchFilter is applied to the FULL eligible list
+  // BEFORE maxJobs caps anything — never the reverse. Capping first (the
+  // pre-8.5.2 behavior) meant maxJobs limited which RAW candidates were
+  // ever considered, not how many QUALIFYING candidates reached Claude: with
+  // many sources/jobs, the first maxJobs raw candidates could all fail the
+  // filter, sending 0 jobs to Claude even though plenty of qualifying jobs
+  // existed further down the eligible list (see docs/JOB_SOURCES.md history
+  // / the Phase 8.5.2 production report for the concrete case: 53 eligible
+  // candidates, maxJobs=3, all 3 raw candidates taken first happened to
+  // fail the filter, so 0 jobs ever reached Claude).
   let relevanceFilteredCount = 0;
-  const jobsToMatch = deps.preMatchFilter
-    ? cappedForMatching.filter((job) => {
-        const passes = deps.preMatchFilter!(job);
-        if (!passes) {
-          relevanceFilteredCount += 1;
-        }
-        return passes;
-      })
-    : cappedForMatching;
+  let jobsToMatch: Job[];
+
+  if (deps.preMatchFilter) {
+    const qualifying = eligible.filter((job) => {
+      const passes = deps.preMatchFilter!(job);
+      if (!passes) {
+        relevanceFilteredCount += 1;
+      }
+      return passes;
+    });
+    // Fair, deterministic ordering across sources (Phase 8.5.2 §5-6) applied
+    // to the QUALIFYING set, then capped to maxJobs — guarantees
+    // jobsSentToMatching <= maxJobs while maximizing the chance the capped
+    // budget is spent on strong, source-diverse candidates.
+    const ordered = orderCandidatesForMatching(qualifying);
+    jobsToMatch = deps.maxJobs !== undefined ? ordered.slice(0, deps.maxJobs) : ordered;
+  } else {
+    // Unchanged for every caller that doesn't supply preMatchFilter
+    // (/career/run, /jobs/analyze) — maxJobs still caps the eligible list
+    // directly, in its original order, exactly as before Phase 8.5.2.
+    jobsToMatch = deps.maxJobs !== undefined ? eligible.slice(0, deps.maxJobs) : eligible;
+  }
 
   if (jobsToMatch.length > 0 && !deps.claudeClient) {
     throw new ClaudeNotConfiguredError();

@@ -67,7 +67,35 @@ CAREER RELEVANCE SCORE — a separate judgment from matchScore:
 - Related roles may also score highly on careerRelevanceScore when they have strong genuine overlap with: ${CAREER_RELEVANCE_POSITIVE_SIGNALS}. Judge overlap by what the role actually IS and DOES day-to-day, not by matching isolated keywords — a role whose title and core responsibilities are quality engineering/testing/automation-centered belongs here even if the exact title varies; a role whose title and core responsibilities are something else entirely (e.g. IT help desk, service desk, desktop support, system/network administration, NOC, general IT operations/infrastructure support) does NOT belong here even if it incidentally mentions a related tool or system once. A single incidental phrase (e.g. "QA Engineer supporting IT service desk software" — this is a QA role, not a service desk role) must never by itself drag the score down; judge the role as a whole.
 - Score low (well under 70) for roles that are fundamentally a different career family, even if some individual factors elsewhere in your assessment look favorable.
 
+MATCH SCORE FRAMEWORK — how to weigh matchScore (0-100):
+- matchScore measures how well the candidate's OWN stated skills and experience fit THIS specific job — distinct from careerRelevanceScore above.
+- Weigh these dimensions by priority (qualitative priority ordering, not a literal formula to calculate): (1) Core role / responsibilities — highest priority, roughly 30% — can the candidate credibly perform what this role actually does day to day? (2) Technical skills, roughly 25%. (3) Automation / architecture depth, roughly 15%. (4) Seniority / scope fit, roughly 10%. (5) Domain experience, roughly 10%. (6) AI / strategic relevance, roughly 5%. (7) Nice-to-have / stretch items, roughly 5% — the lowest priority.
+- Classify each requirement the job posting states as one of:
+  - MANDATORY: clearly necessary to perform the core role.
+  - PREFERRED: a nice-to-have tool or technology.
+  - STRETCH: would improve the profile but is not essential.
+  When the posting doesn't explicitly label a requirement, infer conservatively from its own wording: phrases like "required", "must have", "mandatory", "essential" indicate MANDATORY; phrases like "preferred", "nice to have", "bonus", "plus", "desirable" indicate PREFERRED or STRETCH. Do not assume every listed technology is mandatory by default.
+- Mandatory requirements matter far more than preferred or stretch requirements. Missing ONE preferred or stretch item (a specific framework, vendor, certification, cloud platform, or domain keyword) must NOT collapse the overall matchScore when the core role and the mandatory requirements are strongly aligned. A candidate must not be pushed below 70 solely because of a few preferred or stretch gaps.
+- Score bands:
+  - 90-100 Exceptional fit: strong alignment across role, seniority, core technical skills, and responsibilities.
+  - 80-89 Strong fit: clear candidate match with only limited gaps.
+  - 70-79 Good fit: core responsibilities and the most important requirements align; some gaps are acceptable.
+  - 60-69 Borderline fit: some important alignment exists but there are meaningful gaps.
+  - 40-59 Weak fit: significant core requirements are missing, or role alignment is limited.
+  - 0-39 Poor fit: fundamental mismatch.
+
+TRANSFERABLE SKILLS — give genuine credit for closely related experience, never invented experience:
+- Not having used the exact tool named in a posting is not the same as being unable to perform the responsibility it supports. For example: Playwright experience supports other modern browser automation frameworks; API testing experience transfers across REST/HTTP tooling; Page Object Model / Service Object Model experience transfers across automation frameworks; CI/CD quality-gate experience transfers across other CI platforms; banking/fintech testing experience transfers to other enterprise or regulated systems; LLM/RAG/agent testing experience transfers across other AI evaluation frameworks.
+- Only credit a transferable skill when there is genuine similarity of responsibility to something the profile actually states — label it INFERENCE (never FACT), and never award credit for a skill the profile does not support at all. Do not equate "has not used this exact tool" with "cannot perform this responsibility" — but do not equate it with "has used this tool" either.
+
+RECOMMENDATION CALIBRATION:
+- The system that consumes your assessment only shortlists a job when careerRelevanceScore >= 70 AND matchScore >= 70 AND recommendation is APPLY or CONSIDER. Calibrate your recommendation to this reality — do not mark a role REJECT that you would otherwise score as a good or strong fit.
+- APPLY: the role is strongly aligned with the candidate's core experience, and the candidate can credibly perform the main responsibilities.
+- CONSIDER: the role is strategically valuable and reasonably aligned, but has meaningful gaps or stretch requirements.
+- REJECT: use only for fundamental misalignment — wrong career direction, wrong seniority, core responsibilities the candidate cannot credibly perform, or missing essential (mandatory) technical requirements. Do NOT use REJECT merely because one preferred framework, cloud platform, certification, domain, or technology is missing or unfamiliar.
+
 Also provide:
+- reason: should reflect the core strengths, the most important gaps, and any transferable skills credited — not a bare keyword list.
 - whySelected: one short sentence explaining why this role is (or is not) a strong fit for the candidate's target career direction — safe to show the candidate directly, no job description text, no profile content verbatim.
 
 - Respond with ONLY valid JSON matching the required shape. No prose, no markdown code fences, no commentary before or after the JSON.`;

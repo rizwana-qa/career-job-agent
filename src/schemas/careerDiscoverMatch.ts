@@ -59,6 +59,8 @@ export const DiscoverMatchTopJobSchema = z.object({
   whySelected: z.string(),
   /** Phase 8.5.5 — deterministic, Claude-free explanation of this job's position in the final shortlist (seniority/scope, career growth, AI relevance) — distinct from whySelected, which is Claude's own career-fit rationale. Never exposes prompt content. */
   rankingReason: z.string(),
+  /** Phase 8.5.6 — deterministic, title-only search-tier classification (see searchTierClassifier.ts). A pre-Claude allocation priority signal, distinct from careerRelevanceScore/matchScore/rankingReason — never a guarantee about final ranking order. */
+  searchTier: z.string(),
   jobData: z.object({
     job: JobSchema,
     match: JobMatchSchema

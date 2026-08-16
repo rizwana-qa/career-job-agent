@@ -80,6 +80,28 @@ function queueClaudeClient(responses: string[]): Anthropic {
 }
 
 /**
+ * Phase 8.5.6 changed WHICH job gets sent to Claude first (search-tier
+ * allocation, not raw discovery order), so a call-order-based queue like
+ * queueClaudeClient() above silently assigns the wrong fixture to the wrong
+ * job whenever a test mixes jobs from different tiers. This dispatches by
+ * company name instead (unique per job via rawJob()'s `id` — see
+ * formatJob() in src/prompts/jobMatching.ts, which always includes
+ * `Company: ${job.company}` in the user prompt), so test intent survives
+ * regardless of discovery/allocation order.
+ */
+function companyAwareClaudeClient(responsesByJobId: Record<string, MatchFixture>): Anthropic {
+  const create = vi.fn(async (params: { messages: Array<{ content: string }> }) => {
+    const userPrompt = params.messages[0]?.content ?? "";
+    const matchedId = Object.keys(responsesByJobId).find((id) => userPrompt.includes(`Company: Company ${id}`));
+    if (!matchedId) {
+      throw new Error(`companyAwareClaudeClient: no mock response configured for this prompt: ${userPrompt.slice(0, 300)}`);
+    }
+    return { content: [{ type: "text", text: matchJson(responsesByJobId[matchedId]) }] };
+  });
+  return { messages: { create } } as unknown as Anthropic;
+}
+
+/**
  * Phase 8.5.5 §10 — CoverGo-style regression + two synthetic stronger
  * competitors, matching the exact real production score shape.
  */
@@ -127,11 +149,11 @@ describe("POST /career/discover-match — CoverGo regression (Phase 8.5.5 §10)"
       careerRelevanceScore: 80
     };
 
-    const claudeClient = queueClaudeClient([
-      matchJson(coverGoMatch),
-      matchJson(principalArchitectMatch),
-      matchJson(aiQualityMatch)
-    ]);
+    const claudeClient = companyAwareClaudeClient({
+      covergo: coverGoMatch,
+      "example-a": principalArchitectMatch,
+      "example-b": aiQualityMatch
+    });
 
     const app = createApp({
       apiKey: API_KEY,
@@ -201,7 +223,10 @@ describe("POST /career/discover-match — CoverGo regression (Phase 8.5.5 §10)"
       careerRelevanceScore: 85
     };
 
-    const claudeClient = queueClaudeClient([matchJson(executionMatch), matchJson(principalMatch)]);
+    const claudeClient = companyAwareClaudeClient({
+      "execution-senior": executionMatch,
+      "principal-architect": principalMatch
+    });
     const app = createApp({
       apiKey: API_KEY,
       jobSource: fakeSource([executionJob, principalJob]),
@@ -254,7 +279,10 @@ describe("POST /career/discover-match — Senior QA exception (Phase 8.5.5 §11)
       careerRelevanceScore: 71
     };
 
-    const claudeClient = queueClaudeClient([matchJson(strongMatch), matchJson(weakMatch)]);
+    const claudeClient = companyAwareClaudeClient({
+      "strong-senior": strongMatch,
+      "weak-office": weakMatch
+    });
     const app = createApp({
       apiKey: API_KEY,
       jobSource: fakeSource([strongSeniorJob, weakJob]),
@@ -305,7 +333,10 @@ describe("POST /career/discover-match — low quality Senior test (Phase 8.5.5 �
       careerRelevanceScore: 85
     };
 
-    const claudeClient = queueClaudeClient([matchJson(lowQualityMatch), matchJson(leadMatch)]);
+    const claudeClient = companyAwareClaudeClient({
+      "low-quality-senior": lowQualityMatch,
+      "lead-competitor": leadMatch
+    });
     const app = createApp({
       apiKey: API_KEY,
       jobSource: fakeSource([lowQualitySenior, leadJob]),
@@ -354,5 +385,67 @@ describe("POST /career/discover-match — low quality Senior test (Phase 8.5.5 �
     expect(response.status).toBe(200);
     const body: DiscoverMatchResult = response.body;
     expect(body.topJobs).toEqual([]); // gate unchanged — a sub-70 matchScore still never qualifies
+  });
+});
+
+/** Phase 8.5.6 §12/§13 — case M: search tier is a pre-Claude allocation priority, never a final-ranking guarantee. */
+describe("POST /career/discover-match — strong Tier 3 outranks weak Tier 1 (Phase 8.5.6 §12, case M)", () => {
+  it("a strong Tier 3 automation role outranks a weak Tier 1 role during the unchanged strategic ranking stage", async () => {
+    const weakTier1Job = rawJob(
+      "weak-tier1",
+      "Staff QA Engineer",
+      "Generic quality assurance responsibilities for our platform team."
+    );
+    const strongTier3Job = rawJob(
+      "strong-tier3",
+      "Senior Test Automation Engineer",
+      "Own automation architecture, framework ownership, and CI/CD ownership, providing technical leadership for the test automation strategy."
+    );
+
+    const weakTier1Match: MatchFixture = {
+      matchScore: 71, // barely clears the gate
+      interviewPotential: 50,
+      careerGrowth: 35,
+      futureAIValue: 20,
+      recommendation: "CONSIDER",
+      careerRelevanceScore: 71
+    };
+    const strongTier3Match: MatchFixture = {
+      matchScore: 88,
+      interviewPotential: 80,
+      careerGrowth: 85,
+      futureAIValue: 70,
+      recommendation: "APPLY",
+      careerRelevanceScore: 90
+    };
+
+    const claudeClient = companyAwareClaudeClient({
+      "weak-tier1": weakTier1Match,
+      "strong-tier3": strongTier3Match
+    });
+    const app = createApp({
+      apiKey: API_KEY,
+      jobSource: fakeSource([weakTier1Job, strongTier3Job]),
+      claudeClient,
+      profile: matchingProfile,
+      jobDiscoveryPreferences: {}
+    });
+
+    const response = await request(app)
+      .post("/career/discover-match")
+      .set("Authorization", `Bearer ${API_KEY}`)
+      .send({ maxJobs: 2, topJobs: 2 });
+
+    expect(response.status).toBe(200);
+    const body: DiscoverMatchResult = response.body;
+    expect(body.topJobs).toHaveLength(2);
+    // Both still carry their respective searchTier (an allocation signal, not a ranking guarantee).
+    const weakTop = body.topJobs.find((j) => j.jobId === "weak-tier1")!;
+    const strongTop = body.topJobs.find((j) => j.jobId === "strong-tier3")!;
+    expect(weakTop.searchTier).toBe("TIER_1");
+    expect(strongTop.searchTier).toBe("TIER_3");
+    // But the strong Tier 3 role ranks first.
+    expect(body.topJobs[0].jobId).toBe("strong-tier3");
+    expect(body.topJobs[1].jobId).toBe("weak-tier1");
   });
 });

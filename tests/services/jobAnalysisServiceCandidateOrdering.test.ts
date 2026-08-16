@@ -178,3 +178,59 @@ describe("orderCandidatesForMatching — source mixing (Phase 8.5.2 §6)", () =>
     expect(ordered.map((j) => j.externalJobId)).toEqual(["h-0", "h-1", "h-2", "h-3", "h-4"]);
   });
 });
+
+/** Phase 8.5.6 §13 — cases K and L: search-tier candidate allocation. */
+describe("orderCandidatesForMatching — search-tier allocation (Phase 8.5.6 §8-9, cases K-L)", () => {
+  it("[K] with maxJobs=3 and all tiers available, the selected candidates are not three generic Tier 3 jobs", () => {
+    const tier3Jobs = Array.from({ length: 10 }, (_, i) => job("himalayas", `senior-${i}`, `Senior QA Engineer ${i}`));
+    const tier1Jobs = [job("himalayas", "principal-0", "Principal QA Architect"), job("himalayas", "principal-1", "Staff SDET")];
+    const tier2Jobs = [job("himalayas", "lead-0", "Lead QA Engineer"), job("himalayas", "lead-1", "Quality Engineering Lead")];
+    const tier4Jobs = [job("himalayas", "ai-0", "AI Quality Engineer"), job("himalayas", "ai-1", "AI Test Engineer")];
+
+    // Deliberately listed with Tier 3 first in raw order, to prove
+    // allocation is driven by tier priority, not discovery order.
+    const ordered = orderCandidatesForMatching([...tier3Jobs, ...tier1Jobs, ...tier2Jobs, ...tier4Jobs]);
+    const firstThree = ordered.slice(0, 3);
+
+    const allGenericSenior = firstThree.every((j) => j.jobTitle.startsWith("Senior QA Engineer"));
+    expect(allGenericSenior).toBe(false);
+    // With 2 Tier 1 candidates available, both should be among the first 3.
+    expect(firstThree.filter((j) => j.externalJobId.startsWith("principal")).length).toBe(2);
+  });
+
+  it("[K] end to end via analyzeJobs: jobsSentToMatching for maxJobs=3 includes at least one non-Tier-3 candidate when higher tiers exist", async () => {
+    const tier3Jobs = Array.from({ length: 10 }, (_, i) => job("himalayas", `senior-${i}`, `Senior QA Engineer ${i}`));
+    const tier1Jobs = [job("himalayas", "principal-0", "Principal QA Architect")];
+    const tier4Jobs = [job("himalayas", "ai-0", "AI Quality Engineer")];
+    const client = alwaysSucceedingClient();
+
+    const result = await analyzeJobs([...tier3Jobs, ...tier1Jobs, ...tier4Jobs], {
+      claudeClient: client,
+      profile,
+      maxJobs: 3,
+      includeRankedJobs: true,
+      preMatchFilter: () => true
+    });
+
+    expect(result.jobsSentToMatching).toBe(3);
+    const titlesSent = (result.rankedJobs ?? []).map((r) => r.job.jobTitle);
+    expect(titlesSent).toContain("Principal QA Architect");
+    expect(titlesSent).toContain("AI Quality Engineer");
+  });
+
+  it("[L] when Tier 1 is empty, Tier 2 / Tier 4 / Tier 3 fill the available capacity without any gap or failure", () => {
+    const tier3Jobs = Array.from({ length: 10 }, (_, i) => job("himalayas", `senior-${i}`, `Senior QA Engineer ${i}`));
+    const tier2Jobs = [job("himalayas", "lead-0", "Lead QA Engineer"), job("himalayas", "lead-1", "Quality Engineering Lead")];
+    const tier4Jobs = [job("himalayas", "ai-0", "AI Quality Engineer")];
+    // No Tier 1 jobs at all.
+
+    const ordered = orderCandidatesForMatching([...tier3Jobs, ...tier2Jobs, ...tier4Jobs]);
+    const firstThree = ordered.slice(0, 3);
+
+    expect(firstThree).toHaveLength(3);
+    // Both Tier 2 candidates and the Tier 4 candidate fill the top slots ahead of Tier 3.
+    expect(firstThree.filter((j) => j.externalJobId.startsWith("lead")).length).toBe(2);
+    expect(firstThree.some((j) => j.externalJobId === "ai-0")).toBe(true);
+    expect(firstThree.some((j) => j.jobTitle.startsWith("Senior QA Engineer"))).toBe(false);
+  });
+});

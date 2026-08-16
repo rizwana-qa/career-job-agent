@@ -30,6 +30,8 @@ import {
 } from "../../services/careerRelevanceFilter.js";
 import { isLocationEligible } from "../../services/locationEligibilityFilter.js";
 import { calculateStrategicRankingScore } from "../../ranking/strategicRanking.js";
+import { classifySearchTier } from "../../services/searchTierClassifier.js";
+import { buildTierPrioritizedRoleKeywords } from "../../jobSources/searchConcepts.js";
 import { ClaudeNotConfiguredError, InvalidDiscoveryInputError, JobSourceError, toSafeErrorMessage } from "../../utils/errors.js";
 import { formatZodIssues } from "../../utils/zod.js";
 import { authenticateCareerAgentRequest } from "./careerAuth.js";
@@ -193,7 +195,7 @@ function logPreClaudeRejection(job: Job, reason: string): void {
   );
 }
 
-function toDiscoverMatchTopJob(ranked: RankedJob, rankingReason: string): DiscoverMatchTopJob {
+function toDiscoverMatchTopJob(ranked: RankedJob, rankingReason: string, searchTier: string): DiscoverMatchTopJob {
   return {
     jobId: ranked.job.externalJobId ?? ranked.job.sourceUrl,
     jobTitle: ranked.job.jobTitle,
@@ -218,6 +220,7 @@ function toDiscoverMatchTopJob(ranked: RankedJob, rankingReason: string): Discov
     recommendation: ranked.match.recommendation,
     whySelected: ranked.match.whySelected ?? ranked.match.reason,
     rankingReason,
+    searchTier,
     jobData: { job: ranked.job, match: ranked.match }
   };
 }
@@ -278,7 +281,18 @@ export function createCareerDiscoverMatchRouter(deps: CareerDiscoverMatchRouterD
     try {
       const jobSources = resolveJobSources(deps);
       const discovery = await discoverJobs(
-        { criteria: {} },
+        // Phase 8.5.6 §4/§14: explicit, tier-prioritized (Tier 1 -> Tier 2 ->
+        // Tier 4 -> Tier 3) role-keyword list, scoped to this endpoint's own
+        // discoverJobs() call only — /career/run and /jobs/discover keep
+        // their own separate call sites (untouched) with the generic
+        // DEFAULT_ROLE_DISCOVERY_KEYWORDS. A source that reads
+        // roleKeywords[0] as its primary query term (Himalayas) therefore
+        // naturally searches for a Tier 1 concept first, with no change to
+        // the adapter itself; Remote OK has no query mechanism at all (its
+        // adapter fetches one unfiltered feed — see remoteOkJobSource.ts),
+        // so for that source tier prioritization is realized entirely
+        // downstream, via orderCandidatesForMatching()'s tier allocation.
+        { criteria: { roleKeywords: buildTierPrioritizedRoleKeywords() } },
         {
           // Phase 8.4: always the plural multi-source path (even a single
           // configured source goes through it), so per-source error
@@ -391,7 +405,7 @@ export function createCareerDiscoverMatchRouter(deps: CareerDiscoverMatchRouterD
         preMatchFiltered,
         jobsSentToMatching,
         sources,
-        topJobs: shortlisted.map(({ ranked, strategic }) => toDiscoverMatchTopJob(ranked, strategic.reason))
+        topJobs: shortlisted.map(({ ranked, strategic }) => toDiscoverMatchTopJob(ranked, strategic.reason, classifySearchTier(ranked.job)))
       };
 
       if (idempotencyKey) {

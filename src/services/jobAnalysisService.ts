@@ -5,6 +5,7 @@ import { MATCH_SCORE_LABEL } from "../schemas/jobMatch.js";
 import { loadJobsFromInput } from "./jobSourceService.js";
 import { deduplicateJobs, filterEligibleJobs, type FilterOptions } from "./jobFilterService.js";
 import { evaluateCareerSignal } from "./careerRelevanceFilter.js";
+import { classifySearchTier, SEARCH_TIER_PRIORITY_ORDER, type SearchTier } from "./searchTierClassifier.js";
 import { matchJobToProfile } from "../agents/jobMatchingAgent.js";
 import {
   computeFreshnessScore,
@@ -154,19 +155,15 @@ function candidateOrderingScore(job: Job): number {
 }
 
 /**
- * Fair, deterministic candidate ordering (Phase 8.5.2 §5-6) — used only when
- * `preMatchFilter` is supplied (POST /career/discover-match's multi-source
- * path; see analyzeJobs() below). Two steps, neither Claude-driven:
- * 1. Within each source, sort candidates by candidateOrderingScore()
- *    (role-signal strength, then freshness) so the strongest candidates
- *    from any given source surface first.
- * 2. Round-robin merge across sources, so a single large source (e.g.
- *    Remote OK returning 101 raw jobs against Himalayas's 20) can never
- *    consume the entire maxJobs budget purely because it returned more raw
- *    jobs — every enabled source gets a fair shot before any one source's
- *    later candidates are considered.
+ * Fair, deterministic cross-source ordering (Phase 8.5.2 §5-6) — sorts each
+ * source's own candidates by candidateOrderingScore() (role-signal
+ * strength, then freshness), then round-robin merges across sources, so a
+ * single large source (e.g. Remote OK returning 101 raw jobs against
+ * Himalayas's 20) can never consume the entire maxJobs budget purely
+ * because it returned more raw jobs. Used, unchanged, WITHIN each search
+ * tier bucket by orderCandidatesForMatching() below (Phase 8.5.6 §9).
  */
-export function orderCandidatesForMatching(jobs: Job[]): Job[] {
+function roundRobinMergeBySource(jobs: Job[]): Job[] {
   const bySource = new Map<string, Job[]>();
   for (const job of jobs) {
     const group = bySource.get(job.source);
@@ -190,6 +187,47 @@ export function orderCandidatesForMatching(jobs: Job[]): Job[] {
     }
   }
   return merged;
+}
+
+/**
+ * Fair, deterministic candidate ordering (Phase 8.5.2 §5-6, extended by
+ * Phase 8.5.6's targeted search-tier allocation) — used only when
+ * `preMatchFilter` is supplied (POST /career/discover-match's multi-source
+ * path; see analyzeJobs() below). Two layers, neither Claude-driven:
+ * 1. Group candidates by classifySearchTier() (Tier 1 -> Tier 2 -> Tier 4 ->
+ *    Tier 3 -> UNTIERED — Phase 8.5.6 §3/§8/§9), so senior leadership/
+ *    architecture and AI-quality-specialized roles are prioritized ahead of
+ *    generic Senior QA execution roles BEFORE the maxJobs cap is applied.
+ *    This never changes which jobs qualify (the Career Relevance Gate and
+ *    match threshold are untouched) — only which qualified candidates get
+ *    the limited Claude calls first. A strong Tier 3 job can still outrank
+ *    a weak Tier 1 job later, in the separate, unmodified strategic ranking
+ *    stage (Phase 8.5.6 §12) — searchTier is an allocation priority, not a
+ *    final-ranking guarantee.
+ * 2. Within each tier, apply the existing fair, cross-source round-robin
+ *    (roundRobinMergeBySource()) unchanged — so one source's raw volume
+ *    still can't dominate within a tier either.
+ */
+export function orderCandidatesForMatching(jobs: Job[]): Job[] {
+  const byTier = new Map<SearchTier, Job[]>();
+  for (const job of jobs) {
+    const tier = classifySearchTier(job);
+    const group = byTier.get(tier);
+    if (group) {
+      group.push(job);
+    } else {
+      byTier.set(tier, [job]);
+    }
+  }
+
+  const ordered: Job[] = [];
+  for (const tier of SEARCH_TIER_PRIORITY_ORDER) {
+    const tierJobs = byTier.get(tier);
+    if (tierJobs) {
+      ordered.push(...roundRobinMergeBySource(tierJobs));
+    }
+  }
+  return ordered;
 }
 
 /**

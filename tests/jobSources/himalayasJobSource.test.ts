@@ -1,5 +1,11 @@
 import { describe, expect, it, vi } from "vitest";
-import { createHimalayasJobSource, normalizeHimalayasJob, type HimalayasRawJob } from "../../src/jobSources/himalayasJobSource.js";
+import {
+  buildHimalayasSearchQueryPlan,
+  createHimalayasJobSource,
+  normalizeHimalayasJob,
+  MAX_SEARCH_QUERIES_PER_SOURCE,
+  type HimalayasRawJob
+} from "../../src/jobSources/himalayasJobSource.js";
 import {
   InvalidJobSourceResponseError,
   JobSourceAuthError,
@@ -107,6 +113,86 @@ describe("createHimalayasJobSource — searchJobs", () => {
   it("throws InvalidJobSourceResponseError when the JSON shape is unexpected", async () => {
     const fetchImpl = vi.fn(async () => jsonResponse({ notJobs: [] }));
     await expect(createHimalayasJobSource({ fetchImpl }).searchJobs({})).rejects.toBeInstanceOf(InvalidJobSourceResponseError);
+  });
+});
+
+/** Phase 8.5.7 §2/§12 CASE D — verifies no excessive query count, tier ordering, and controlled (not cartesian) role+location combinations. */
+describe("buildHimalayasSearchQueryPlan (Phase 8.5.7 §2/§3/§6)", () => {
+  it("[D] never exceeds MAX_SEARCH_QUERIES_PER_SOURCE by default", () => {
+    const plan = buildHimalayasSearchQueryPlan();
+    expect(plan.length).toBeLessThanOrEqual(MAX_SEARCH_QUERIES_PER_SOURCE);
+    expect(plan.length).toBe(8);
+  });
+
+  it("orders queries Tier 1 -> Tier 2 -> Tier 4 -> Tier 3, matching the search priority order", () => {
+    const plan = buildHimalayasSearchQueryPlan();
+    const tierSequence = plan.map((spec) => spec.tier);
+    expect(tierSequence).toEqual(["TIER_1", "TIER_1", "TIER_1", "TIER_2", "TIER_2", "TIER_4", "TIER_4", "TIER_3"]);
+  });
+
+  it("respects a smaller caller-supplied cap without exceeding it", () => {
+    const plan = buildHimalayasSearchQueryPlan(3);
+    expect(plan).toHaveLength(3);
+    expect(plan.every((spec) => spec.tier === "TIER_1")).toBe(true);
+  });
+
+  it("pairs each role phrase with a controlled location modifier (Pakistan/UAE/none) — not a full cartesian product of roles x locations x modes", () => {
+    const plan = buildHimalayasSearchQueryPlan();
+    for (const spec of plan) {
+      expect(spec.query.startsWith(spec.roleKeyword)).toBe(true);
+      if (spec.locationModifier) {
+        expect(["Pakistan", "UAE"]).toContain(spec.locationModifier);
+        expect(spec.query).toBe(`${spec.roleKeyword} ${spec.locationModifier}`);
+      } else {
+        expect(spec.query).toBe(spec.roleKeyword);
+      }
+    }
+  });
+});
+
+describe("createHimalayasJobSource — multi-query execution (Phase 8.5.7 §2/§9)", () => {
+  it("issues at most MAX_SEARCH_QUERIES_PER_SOURCE fetch calls per searchJobs() call, all against the documented endpoint", async () => {
+    const fetchImpl = vi.fn(async () => jsonResponse({ jobs: [] }));
+    const source = createHimalayasJobSource({ fetchImpl });
+
+    await source.searchJobs({});
+
+    expect(fetchImpl.mock.calls.length).toBeLessThanOrEqual(MAX_SEARCH_QUERIES_PER_SOURCE);
+    expect(fetchImpl.mock.calls.length).toBe(8);
+    for (const call of fetchImpl.mock.calls) {
+      expect((call[0] as string).toString()).toContain("himalayas.app/jobs/api/search");
+    }
+  });
+
+  it("de-duplicates the same raw job id returned by more than one targeted query", async () => {
+    const fetchImpl = vi.fn(async () => jsonResponse({ jobs: [rawHimalayasJob({ id: 7001 })] }));
+    const source = createHimalayasJobSource({ fetchImpl, maxSearchQueries: 4 });
+
+    const jobs = await source.searchJobs({});
+    expect(fetchImpl).toHaveBeenCalledTimes(4);
+    expect(jobs).toHaveLength(1); // same id 7001 across all 4 queries collapses to one entry
+  });
+
+  it("isolates a single failing query — other queries' results still come back", async () => {
+    let callIndex = 0;
+    const fetchImpl = vi.fn(async () => {
+      callIndex += 1;
+      if (callIndex === 1) {
+        throw new TypeError("fetch failed");
+      }
+      return jsonResponse({ jobs: [rawHimalayasJob({ id: `ok-${callIndex}` })] });
+    });
+    const source = createHimalayasJobSource({ fetchImpl, maxSearchQueries: 3 });
+
+    const jobs = await source.searchJobs({});
+    expect(jobs).toHaveLength(2); // queries 2 and 3 succeeded; query 1's failure was isolated
+  });
+
+  it("re-throws the first captured error, correctly classified, only when every query fails", async () => {
+    const fetchImpl = vi.fn(async () => jsonResponse({}, 403));
+    const source = createHimalayasJobSource({ fetchImpl, maxSearchQueries: 2 });
+
+    await expect(source.searchJobs({})).rejects.toBeInstanceOf(JobSourceAuthError);
   });
 });
 

@@ -91,6 +91,8 @@ export const DiscoverMatchResultSchema = z.object({
   /** Only jobs that passed the full Career Relevance Gate: careerRelevanceScore >= 70 AND matchScore >= 70 AND recommendation in {APPLY, CONSIDER}. A REJECT recommendation never appears here. */
   topJobs: z.array(DiscoverMatchTopJobSchema),
   /** Per-source discovery diagnostics (Phase 8.4 §12) — one source failing never fails the whole run; see SourceDiagnosticSchema. */
-  sources: z.array(SourceDiagnosticSchema)
+  sources: z.array(SourceDiagnosticSchema),
+  /** Phase 8.5.7 §10 — optional, safe tally of classifySearchTier() over the jobs Claude actually evaluated (before the Career Relevance Gate), keyed by tier name (e.g. "TIER_1"). Lets a caller see whether targeted search execution actually increased higher-tier representation in the matching budget, without exposing any job/profile content. */
+  searchResultsByTier: z.record(z.string(), z.number().int().min(0)).optional()
 });
 export type DiscoverMatchResult = z.infer<typeof DiscoverMatchResultSchema>;

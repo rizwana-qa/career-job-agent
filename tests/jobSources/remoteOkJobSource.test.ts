@@ -69,6 +69,14 @@ describe("createRemoteOkJobSource — searchJobs", () => {
     expect((fetchImpl.mock.calls[0][0] as string).toString()).toContain("remoteok.com/api");
   });
 
+  it("[Phase 8.5.7 §5/§12 CASE E] fetches the feed exactly once per searchJobs() call, even with role-keyword criteria supplied — no search API is invented for Remote OK", async () => {
+    const fetchImpl = vi.fn(async () => jsonResponse([rawRemoteOkJob()]));
+    const source = createRemoteOkJobSource({ fetchImpl });
+
+    await source.searchJobs({ roleKeywords: ["Principal QA Engineer", "AI Quality Engineer"] });
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+  });
+
   it("throws JobSourceTimeoutError when the request aborts", async () => {
     const fetchImpl = vi.fn(async () => {
       const error = new Error("aborted");

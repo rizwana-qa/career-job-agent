@@ -395,6 +395,17 @@ export function createCareerDiscoverMatchRouter(deps: CareerDiscoverMatchRouterD
       const preMatchFiltered = discovery.relevanceFilteredCount ?? 0;
       const jobsSentToMatching = discovery.jobsSentToMatching ?? 0;
 
+      // Phase 8.5.7 §10 — cheap, safe visibility into whether targeted search
+      // execution actually reached more Tier 1/2/4 candidates: a tally of
+      // classifySearchTier() over the jobs Claude evaluated (rankedForGate),
+      // computed entirely from data already in hand — no new discovery/
+      // adapter plumbing required for this optional field.
+      const searchResultsByTier: Record<string, number> = {};
+      for (const ranked of rankedForGate) {
+        const tier = classifySearchTier(ranked.job);
+        searchResultsByTier[tier] = (searchResultsByTier[tier] ?? 0) + 1;
+      }
+
       const result: DiscoverMatchResult = {
         status,
         jobsDiscovered: discovery.jobsFound,
@@ -405,7 +416,8 @@ export function createCareerDiscoverMatchRouter(deps: CareerDiscoverMatchRouterD
         preMatchFiltered,
         jobsSentToMatching,
         sources,
-        topJobs: shortlisted.map(({ ranked, strategic }) => toDiscoverMatchTopJob(ranked, strategic.reason, classifySearchTier(ranked.job)))
+        topJobs: shortlisted.map(({ ranked, strategic }) => toDiscoverMatchTopJob(ranked, strategic.reason, classifySearchTier(ranked.job))),
+        ...(Object.keys(searchResultsByTier).length > 0 ? { searchResultsByTier } : {})
       };
 
       if (idempotencyKey) {

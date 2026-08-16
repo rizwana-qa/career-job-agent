@@ -139,10 +139,20 @@ naturally dropped by `normalize()`'s required-field checks.
 
 | | |
 |---|---|
-| Access method | Documented partner/affiliate API — requires an approved affiliate account |
+| Access method | Documented partner/affiliate Job Search API — `GET http://public-api.careerjet.net/search`, requires an approved affiliate account |
 | Available | Partner-gated |
 | Credential required | YES — `CAREERJET_API_KEY` + `CAREERJET_AFFILIATE_ID`, not configured in this environment |
-| Implementable now | NO — placeholder adapter (`src/jobSources/careerjetJobSource.ts`) |
+| Implementable now | Adapter is real and fetch-capable as of Phase 8.5.15 (`src/jobSources/careerjetJobSource.ts`), but `searchJobs()` still throws `JobSourceAuthError` until real credentials are configured — raw shape unverified, see caveat above |
+
+Phase 8.5.15 added tier-prioritized, bounded multi-query search (mirroring
+`himalayasJobSource.ts`), using Careerjet's documented separate
+`location`/`locale_code` parameters (not embedded in the keyword text — see
+the Himalayas section above for why that approach was abandoned there).
+Target locales: Pakistan (`en_PK` — Islamabad, Pakistan) and UAE (`en_AE` —
+Dubai, Abu Dhabi, UAE), configurable via `DEFAULT_CAREERJET_TARGET_LOCALES`.
+The exact transport mechanism for `CAREERJET_API_KEY` (query param vs
+header) is unverified — sent as a best-effort `api_key` query param; confirm
+against the real partner API contract before enabling in production.
 
 ## Jobicy
 

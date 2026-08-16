@@ -90,6 +90,85 @@ describe("Search tier cases G-J — rejected before reaching Claude or searchTie
   });
 });
 
+/** Phase 8.5.9 §9 — regression cases A-P: TIER_1/2/3 now require a genuine quality-family title signal in addition to seniority/leadership; TIER_4 requires genuine AI-quality/testing phrasing, not a bare "AI"/"Agent" mention. */
+describe("classifySearchTier — Phase 8.5.9 §9 regression cases A-P", () => {
+  it("[A] Principal QA Engineer -> TIER_1", () => {
+    expect(classifySearchTier(job("Principal QA Engineer"))).toBe("TIER_1");
+  });
+
+  it("[B] Staff Software Quality Engineer -> TIER_1", () => {
+    expect(classifySearchTier(job("Staff Software Quality Engineer"))).toBe("TIER_1");
+  });
+
+  it("[C] QA Architect -> TIER_1", () => {
+    expect(classifySearchTier(job("QA Architect"))).toBe("TIER_1");
+  });
+
+  it("[D] Automation Architect -> TIER_1", () => {
+    expect(classifySearchTier(job("Automation Architect"))).toBe("TIER_1");
+  });
+
+  it("[E] Principal Software Engineer -> NOT TIER_1 (no genuine quality/testing title signal)", () => {
+    expect(classifySearchTier(job("Principal Software Engineer"))).not.toBe("TIER_1");
+    expect(classifySearchTier(job("Principal Software Engineer"))).toBe("UNTIERED");
+  });
+
+  it("[F] Staff Backend Engineer -> NOT TIER_1", () => {
+    expect(classifySearchTier(job("Staff Backend Engineer"))).not.toBe("TIER_1");
+    expect(classifySearchTier(job("Staff Backend Engineer"))).toBe("UNTIERED");
+  });
+
+  it("[G] Lead QA Engineer -> TIER_2", () => {
+    expect(classifySearchTier(job("Lead QA Engineer"))).toBe("TIER_2");
+  });
+
+  it("[H] SDET Lead -> TIER_2", () => {
+    expect(classifySearchTier(job("SDET Lead"))).toBe("TIER_2");
+  });
+
+  it("[I] Technical Lead -> NOT TIER_2 (no genuine quality/testing title signal)", () => {
+    expect(classifySearchTier(job("Technical Lead"))).not.toBe("TIER_2");
+    expect(classifySearchTier(job("Technical Lead"))).toBe("UNTIERED");
+  });
+
+  it("[J] AI Quality Engineer -> TIER_4", () => {
+    expect(classifySearchTier(job("AI Quality Engineer"))).toBe("TIER_4");
+  });
+
+  it("[K] LLM Evaluation Engineer -> TIER_4", () => {
+    expect(classifySearchTier(job("LLM Evaluation Engineer"))).toBe("TIER_4");
+  });
+
+  it("[L] AI Engineer -> NOT TIER_4 automatically (generic AI engineering, no testing/evaluation/quality signal)", () => {
+    expect(classifySearchTier(job("AI Engineer"))).not.toBe("TIER_4");
+    expect(classifySearchTier(job("AI Engineer"))).toBe("UNTIERED");
+  });
+
+  it("[M] Senior QA Engineer -> TIER_3", () => {
+    expect(classifySearchTier(job("Senior QA Engineer"))).toBe("TIER_3");
+  });
+
+  it("[N] Senior Data Engineer -> NOT TIER_3", () => {
+    expect(classifySearchTier(job("Senior Data Engineer"))).not.toBe("TIER_3");
+    expect(classifySearchTier(job("Senior Data Engineer"))).toBe("UNTIERED");
+  });
+
+  it("[O] Generic Software Engineer -> UNTIERED, never automatically a high tier", () => {
+    expect(classifySearchTier(job("Software Engineer"))).toBe("UNTIERED");
+  });
+
+  it("[P] Principal Product Engineer -> NOT TIER_1", () => {
+    expect(classifySearchTier(job("Principal Product Engineer"))).not.toBe("TIER_1");
+    expect(classifySearchTier(job("Principal Product Engineer"))).toBe("UNTIERED");
+  });
+
+  it("generic AI-adjacent titles (Researcher, Data Scientist) are not force-fit into Tier 4", () => {
+    expect(classifySearchTier(job("AI Researcher"))).toBe("UNTIERED");
+    expect(classifySearchTier(job("Machine Learning Engineer"))).toBe("UNTIERED");
+    expect(classifySearchTier(job("Data Scientist"))).toBe("UNTIERED");
+  });
+});
+
 describe("SEARCH_TIER_PRIORITY_ORDER", () => {
   it("is Tier 1 -> Tier 2 -> Tier 4 -> Tier 3 -> UNTIERED (Phase 8.5.6 §3) — NOT Tier 1 -> 2 -> 3 -> 4", () => {
     expect(SEARCH_TIER_PRIORITY_ORDER).toEqual(["TIER_1", "TIER_2", "TIER_4", "TIER_3", "UNTIERED"]);

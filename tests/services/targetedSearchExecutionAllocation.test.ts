@@ -107,6 +107,22 @@ describe("Phase 8.5.7 §12 — targeted search execution regression cases", () =
     expect(isLocationEligible(worldwideJob)).toBe(true);
   });
 
+  it("[Phase 8.5.9 §10] generic 'Principal Software Engineer' candidates never consume Tier 1 allocation priority merely from the word Principal", () => {
+    const genericPrincipalJobs = Array.from({ length: 10 }, (_, i) => job(`Principal Software Engineer ${i}`, `psE-${i}`));
+    const tier3Jobs = Array.from({ length: 5 }, (_, i) => job(`Senior QA Engineer ${i}`, `t3-${i}`));
+    const tier1Jobs = [job("Principal QA Engineer A", "t1-a"), job("Principal QA Engineer B", "t1-b")];
+    const tier4Jobs = [job("AI Quality Engineer A", "t4-a"), job("AI Quality Engineer B", "t4-b")];
+
+    const ordered = orderCandidatesForMatching([...genericPrincipalJobs, ...tier3Jobs, ...tier1Jobs, ...tier4Jobs]);
+    const budget = ordered.slice(0, 3);
+
+    expect(budget).toHaveLength(3);
+    expect(budget.every((j) => classifySearchTier(j) !== "UNTIERED")).toBe(true);
+    expect(budget.every((j) => !j.jobTitle.startsWith("Principal Software Engineer"))).toBe(true);
+    // The 2 genuine Tier1 candidates fill the top of the budget ahead of Tier4/Tier3.
+    expect(budget.filter((j) => classifySearchTier(j) === "TIER_1")).toHaveLength(2);
+  });
+
   it("[K] irrelevant roles (Office Assistant, Service Desk, Sales, Data Entry, Manufacturing QA) never reach Claude", () => {
     const officeAssistant = job("Remote Office Assistant", "k-1", {
       jobDescription: "Support daily office operations and manage calendars for a distributed team.",

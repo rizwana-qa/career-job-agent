@@ -99,11 +99,14 @@ describe("JOB_MATCHING_SYSTEM_PROMPT — fix verification (Phase 8.5.4 §12)", (
 
 /**
  * Phase 8.5.4 §9 — negative regression: the new scoring rules must not
- * make unrelated roles score higher. Most of these never reach Claude at
- * all (unchanged Phase 8.3/8.3.3 pre-Claude filters); the two that do
- * reach Claude by design (Engineering Manager is an intentionally
- * ambiguous title, deferred to Claude) are covered by mocked low-score
- * responses proving the gate still correctly excludes them.
+ * make unrelated roles score higher. These never reach Claude at all under
+ * the unchanged Phase 8.3/8.3.3 pre-Claude filters — as of Phase 8.5.9 §8,
+ * this now also includes an unreinforced "Engineering Manager" title (the
+ * ambiguous-title path requires a genuine secondary-signal combination, not
+ * just the title). The Engineering Manager case below constructs a
+ * JobMatchSchema response directly (not via the live pipeline) to confirm
+ * that IF such a role's description carried enough signal to reach Claude,
+ * the gate would still correctly exclude a genuinely unrelated result.
  */
 describe("Negative regression — unrelated roles stay excluded (Phase 8.5.4 §9)", () => {
   it("Office Assistant is rejected by the positive prefilter before any Claude call", async () => {
@@ -133,12 +136,14 @@ describe("Negative regression — unrelated roles stay excluded (Phase 8.5.4 §9
     expect(hasPositiveCareerSignal(dataEngineerJob)).toBe(false);
   });
 
-  it("an unrelated Engineering Manager role (an intentionally ambiguous title that DOES reach Claude) still validates as a correctly-excluded low score", () => {
-    // "Engineering Manager" is deliberately never pre-Claude-rejected on
-    // title alone (Phase 8.3.3 §4) — Claude's own judgment decides. This
-    // confirms that decision, once made, still schema-validates and still
-    // fails the 70/70 gate when the role genuinely has no quality ownership —
-    // the new rubric does not force such a role's score upward.
+  it("an unrelated Engineering Manager role, if it ever reaches Claude, still validates as a correctly-excluded low score", () => {
+    // As of Phase 8.5.9 §8, "Engineering Manager" alone no longer
+    // pre-Claude-passes on title — it needs a genuine secondary-signal
+    // combination too (see careerRelevanceFilter.test.ts [I]/[I2]). This
+    // test only confirms the downstream gate: IF such a role's description
+    // ever carried enough signal to reach Claude, a genuinely-unrelated
+    // result still schema-validates and still fails the 70/70 gate — the
+    // new rubric does not force such a role's score upward.
     const response = JobMatchSchema.parse({
       matchScore: 12,
       interviewPotential: 15,

@@ -74,9 +74,14 @@ export const SHORTLIST_ELIGIBLE_RECOMMENDATIONS = new Set(["APPLY", "CONSIDER"])
  *    their seniority variants) — passes immediately, no description check.
  * 2. AMBIGUOUS_TITLE_PATTERNS — broad titles (Software Engineer, Technical
  *    Lead, AI Engineer, Engineering Manager, Automation Engineer) that may
- *    or may not carry real QA/testing responsibilities. These are NEVER
- *    rejected here — per Phase 8.3.3 §4, a broad title alone is not grounds
- *    for pre-Claude rejection; Claude's semantic judgment decides.
+ *    or may not carry real QA/testing responsibilities. As of Phase 8.5.9
+ *    §8, the title alone is no longer sufficient — these fall through to
+ *    the SAME bounded secondary-signal combination check as tier 3 below
+ *    (title alone used to pass immediately; that let e.g. a "Principal
+ *    Software Engineer" with zero real QA ownership reach Claude and even
+ *    get search-tier-classified as TIER_1 purely from the word "Principal" —
+ *    see Phase 8.5.8's diagnosis). The distinction from tier 3 is only in
+ *    the reported `strength` ("AMBIGUOUS_TITLE" vs "SECONDARY_SIGNALS").
  * 3. Everything else — the title is not explicitly QA-shaped and not one of
  *    the recognized ambiguous titles, so it only passes if the job
  *    description/skills/responsibilities/requirements show a REASONABLE
@@ -170,21 +175,38 @@ function jobSearchableText(job: Job): string {
   return [job.jobDescription, job.skills.join(" "), job.responsibilities.join(" "), job.requirements.join(" ")].join(" ");
 }
 
-/** Full result, including which tier a job passed on (or that it passed none) — used for logging and tests. */
+/**
+ * Full result, including which tier a job passed on (or that it passed
+ * none) — used for logging and tests.
+ *
+ * Phase 8.5.9 §8: AMBIGUOUS_TITLE_PATTERNS ("Software Engineer", "AI
+ * Engineer", "Technical Lead", "Engineering Manager", "Automation Engineer")
+ * used to pass IMMEDIATELY on title alone, with no description check at
+ * all — the Phase 8.5.8 diagnosis identified this as the likely mechanism by
+ * which a title like "Principal Software Engineer" (no real QA ownership)
+ * could reach Claude and even get classified TIER_1 by searchTier purely
+ * from the word "Principal". This is now gated behind the SAME bounded
+ * combination requirement already used for unrecognized titles
+ * (>= SECONDARY_SIGNAL_MIN_COUNT distinct secondary signals in the
+ * description/skills/responsibilities/requirements) — an ambiguous title is
+ * no longer sufficient by itself. This makes the filter STRICTER, not
+ * weaker: nothing that used to fail now passes, and the "AMBIGUOUS_TITLE"
+ * strength label is preserved for jobs whose ambiguous title is reinforced
+ * by real signals, distinct from "SECONDARY_SIGNALS" (an unrecognized title
+ * saved entirely by description-level evidence).
+ */
 export function evaluateCareerSignal(job: Job): CareerSignalResult {
   if (STRONG_POSITIVE_TITLE_PATTERNS.some((pattern) => pattern.test(job.jobTitle))) {
     return { passes: true, strength: "STRONG_TITLE" };
   }
-  if (AMBIGUOUS_TITLE_PATTERNS.some((pattern) => pattern.test(job.jobTitle))) {
-    return { passes: true, strength: "AMBIGUOUS_TITLE" };
-  }
 
+  const isAmbiguousTitle = AMBIGUOUS_TITLE_PATTERNS.some((pattern) => pattern.test(job.jobTitle));
   const searchableText = jobSearchableText(job);
   const matchedSecondarySignals = SECONDARY_SKILL_SIGNALS.filter((signal) => signal.pattern.test(searchableText)).map(
     (signal) => signal.label
   );
   if (matchedSecondarySignals.length >= SECONDARY_SIGNAL_MIN_COUNT) {
-    return { passes: true, strength: "SECONDARY_SIGNALS", matchedSecondarySignals };
+    return { passes: true, strength: isAmbiguousTitle ? "AMBIGUOUS_TITLE" : "SECONDARY_SIGNALS", matchedSecondarySignals };
   }
 
   return { passes: false, strength: "NONE" };

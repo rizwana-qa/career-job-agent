@@ -140,13 +140,27 @@ describe("hasPositiveCareerSignal / evaluateCareerSignal — positive pre-Claude
     expect(result.passes).toBe(true); // title alone already qualifies (Automation Engineer is a strong-title pattern)
   });
 
-  it("[I] 'Software Engineer' with no testing signals does not automatically qualify as a strong match, but is not pre-Claude-rejected either", () => {
+  it("[I] 'Software Engineer' with no testing signals in the description is now pre-Claude-rejected — an ambiguous title alone is no longer sufficient (Phase 8.5.9 §8)", () => {
     const result = evaluateCareerSignal(
       job({ jobTitle: "Software Engineer", jobDescription: genericNonQaDescription, skills: ["JavaScript"], responsibilities: ["Build features"], requirements: ["3+ years experience"] })
     );
+    expect(result.passes).toBe(false);
+    expect(result.strength).toBe("NONE");
+  });
+
+  it("[I2] 'Software Engineer' WITH a genuine combination of QA/testing signals still qualifies via the ambiguous-title path (Phase 8.5.9 §8)", () => {
+    const result = evaluateCareerSignal(
+      job({
+        jobTitle: "Software Engineer",
+        jobDescription: "Build and maintain our Playwright-based test automation framework, covering API testing and CI/CD testing pipelines.",
+        skills: ["Playwright", "API Testing"],
+        responsibilities: ["Maintain the automation framework"],
+        requirements: ["CI/CD experience"]
+      })
+    );
     expect(result.passes).toBe(true);
-    expect(result.strength).toBe("AMBIGUOUS_TITLE"); // not a confirmed QA match — deferred to Claude, per Phase 8.3.3 §4
-    expect(result.strength).not.toBe("STRONG_TITLE");
+    expect(result.strength).toBe("AMBIGUOUS_TITLE");
+    expect(result.matchedSecondarySignals?.length).toBeGreaterThanOrEqual(2);
   });
 
   it("[J] a 'QA Engineer' title with an incidental 'service desk' mention is not rejected by either pre-Claude filter, and reaches Claude", () => {

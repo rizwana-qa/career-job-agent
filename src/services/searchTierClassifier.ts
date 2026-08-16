@@ -21,38 +21,93 @@ export type SearchTier = "TIER_1" | "TIER_2" | "TIER_3" | "TIER_4" | "UNTIERED";
 export const SEARCH_TIER_PRIORITY_ORDER: readonly SearchTier[] = ["TIER_1", "TIER_2", "TIER_4", "TIER_3", "UNTIERED"];
 
 /**
- * TIER 4 (AI/LLM/RAG/Agent specialization) is checked FIRST, ahead of Tier
- * 1's Principal/Staff/Architect patterns — per Phase 8.5.6 §2's own example
- * ("AI Quality Assurance Lead" is explicitly listed under Tier 4, even
- * though it also contains "Lead"). AI specialization is the candidate's
- * stated primary career direction (profile/career_profile.md), so it takes
- * precedence over a seniority word alone when both are present in a title.
+ * TIER 4 (genuine AI-quality/testing specialization) is checked FIRST,
+ * ahead of Tier 1's Principal/Staff/Architect patterns — per Phase 8.5.6
+ * §2's own example ("AI Quality Assurance Lead" is explicitly listed under
+ * Tier 4, even though it also contains "Lead"). Phase 8.5.9 §4 tightened
+ * this from a bare `\bai\b`/`\bagent\b` match (which any "AI Engineer" or
+ * "Data Scientist" would trip) to explicit compound testing/quality/eval
+ * phrases — a generic "AI Engineer" or "Machine Learning Engineer" no
+ * longer matches Tier 4 (or any tier) on title alone; it may still reach
+ * Claude via the unchanged, separate positive career-signal prefilter
+ * (careerRelevanceFilter.ts), just without a search-tier priority boost.
  */
-const TIER_4_TITLE_PATTERNS: RegExp[] = [/\bai\b/i, /\bllm\b/i, /\brag\b/i, /\bgenai\b/i, /\bagent\b/i];
-const TIER_1_TITLE_PATTERNS: RegExp[] = [/\bprincipal\b/i, /\bstaff\b/i, /\barchitect\b/i];
-const TIER_2_TITLE_PATTERNS: RegExp[] = [/\blead\b/i];
-const TIER_3_TITLE_PATTERNS: RegExp[] = [/\bsenior\b/i, /\bsr\.?\b/i];
+const TIER_4_TITLE_PATTERNS: RegExp[] = [
+  /\bai\s*quality\b/i,
+  /\bai\s*qa\b/i,
+  /\bai\s*testing\b/i,
+  /\bai\s*test\b/i,
+  /\bai\s*evals?\b/i,
+  /\bai\s*evaluation\b/i,
+  /\bllm\s*testing\b/i,
+  /\bllm\s*test\b/i,
+  /\bllm\s*evaluation\b/i,
+  /\brag\s*testing\b/i,
+  /\brag\s*test\b/i,
+  /\brag\s*quality\b/i,
+  /\bagent\s*testing\b/i,
+  /\bagent\s*test\b/i,
+  /\bagent\s*evaluation\b/i,
+  /\bgenai\s*qa\b/i,
+  /\bai\s*model\s*quality\b/i
+];
+
+/**
+ * Phase 8.5.9 §2/§3/§5 — the genuine target-career-family title signal
+ * required (in addition to a seniority/leadership word) before a title
+ * qualifies for TIER_1/TIER_2/TIER_3. A bare "Principal"/"Staff"/
+ * "Architect"/"Lead"/"Senior" is no longer sufficient by itself — this is
+ * what stops "Principal Software Engineer" or "Staff Backend Engineer" from
+ * being search-tier-classified as if they were quality-engineering roles.
+ * AI-quality titles are intentionally excluded here — they're TIER_4's
+ * concern (checked above, before this ever runs).
+ */
+const QUALITY_FAMILY_TITLE_PATTERNS: RegExp[] = [
+  /\bqa\b/i,
+  /\bquality\b/i,
+  /\bsqa\b/i,
+  /\bsdet\b/i,
+  /\bsoftware\s*development\s*engineer\s*in\s*test\b/i,
+  /\btest\s*engineer\b/i,
+  /\btest\s*architect\b/i,
+  /\bautomation\s*architect\b/i,
+  /\btest\s*automation\b/i
+];
+
+const TIER_1_SENIORITY_TITLE_PATTERNS: RegExp[] = [/\bprincipal\b/i, /\bstaff\b/i, /\barchitect\b/i];
+const TIER_2_LEADERSHIP_TITLE_PATTERNS: RegExp[] = [/\blead\b/i];
+const TIER_3_SENIOR_TITLE_PATTERNS: RegExp[] = [/\bsenior\b/i, /\bsr\.?\b/i];
 
 /**
  * Title-only classification (never description/responsibilities — those
- * refine strategicRanking.ts's separate scope score, not this tier). Safe
- * to be broad here because classifySearchTier() only ever runs on jobs that
- * have already passed the unchanged positive career-signal pre-Claude
- * filter (careerRelevanceFilter.ts) — i.e. jobs already confirmed to carry
- * some genuine QA/testing/automation/AI-quality signal.
+ * refine strategicRanking.ts's separate scope score, not this tier).
+ * classifySearchTier() only ever runs on jobs that have already passed the
+ * unchanged positive career-signal pre-Claude filter (careerRelevanceFilter.ts),
+ * but that filter alone isn't a strong enough guarantee that a title
+ * carrying a seniority word actually IS a quality-engineering role (see
+ * Phase 8.5.8's diagnosis of a misclassified Tier 1 candidate) — so
+ * TIER_1/TIER_2/TIER_3 each additionally require QUALITY_FAMILY_TITLE_PATTERNS
+ * to match, not just the seniority/leadership word alone.
  */
 export function classifySearchTier(job: Job): SearchTier {
   const title = job.jobTitle;
+
   if (TIER_4_TITLE_PATTERNS.some((pattern) => pattern.test(title))) {
     return "TIER_4";
   }
-  if (TIER_1_TITLE_PATTERNS.some((pattern) => pattern.test(title))) {
+
+  const hasQualityFamilySignal = QUALITY_FAMILY_TITLE_PATTERNS.some((pattern) => pattern.test(title));
+  if (!hasQualityFamilySignal) {
+    return "UNTIERED";
+  }
+
+  if (TIER_1_SENIORITY_TITLE_PATTERNS.some((pattern) => pattern.test(title))) {
     return "TIER_1";
   }
-  if (TIER_2_TITLE_PATTERNS.some((pattern) => pattern.test(title))) {
+  if (TIER_2_LEADERSHIP_TITLE_PATTERNS.some((pattern) => pattern.test(title))) {
     return "TIER_2";
   }
-  if (TIER_3_TITLE_PATTERNS.some((pattern) => pattern.test(title))) {
+  if (TIER_3_SENIOR_TITLE_PATTERNS.some((pattern) => pattern.test(title))) {
     return "TIER_3";
   }
   return "UNTIERED";
